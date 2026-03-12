@@ -1,0 +1,55 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: agentgroups.agents.kube-agents.io
+spec:
+  group: agents.kube-agents.io
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - email
+                - members
+              properties:
+                email:
+                  type: string
+                members:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                description:
+                  type: string
+            status:
+              type: object
+              properties:
+                memberCount:
+                  type: integer
+                readyMembers:
+                  type: integer
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Email
+          type: string
+          jsonPath: .spec.email
+        - name: Members
+          type: integer
+          jsonPath: .status.memberCount
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+  scope: Namespaced
+  names:
+    plural: agentgroups
+    singular: agentgroup
+    kind: AgentGroup
+    shortNames:
+      - agg

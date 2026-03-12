@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-agents-operator
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-agents-operator
+rules:
+  - apiGroups: ["agents.kube-agents.io"]
+    resources: ["agents", "agentgroups"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["agents.kube-agents.io"]
+    resources: ["agents/status", "agentgroups/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-agents-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-agents-operator
+subjects:
+  - kind: ServiceAccount
+    name: kube-agents-operator
+    namespace: default
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-agents-operator
+  namespace: default
+  labels:
+    app: kube-agents-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kube-agents-operator
+  template:
+    metadata:
+      labels:
+        app: kube-agents-operator
+    spec:
+      serviceAccountName: kube-agents-operator
+      containers:
+        - name: operator
+          image: kube-agents/operator:latest
+          env:
+            - name: NATS_URL
+              value: "nats://nats:4222"
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

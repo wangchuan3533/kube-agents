@@ -1,0 +1,31 @@
+{
+  "name": "@kube-agents/llm",
+  "version": "0.1.0",
+  "description": "Multi-provider LLM abstraction for kube-agents",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@kube-agents/core": "workspace:*",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "openai": "^4.82.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

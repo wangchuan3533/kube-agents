@@ -1,0 +1,27 @@
+{
+  "name": "kube-agents",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Declarative multi-agent framework for Kubernetes",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "turbo build",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,json,md,yaml}\"",
+    "clean": "turbo clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "eslint": "^9.20.0",
+    "prettier": "^3.5.0",
+    "tsup": "^8.4.0",
+    "turbo": "^2.4.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

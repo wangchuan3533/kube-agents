@@ -1,0 +1,165 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: agents.agents.kube-agents.io
+spec:
+  group: agents.kube-agents.io
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - identity
+                - llm
+                - system
+              properties:
+                identity:
+                  type: object
+                  required:
+                    - name
+                    - email
+                  properties:
+                    name:
+                      type: string
+                    email:
+                      type: string
+                    groups:
+                      type: array
+                      items:
+                        type: string
+                llm:
+                  type: object
+                  required:
+                    - provider
+                    - model
+                  properties:
+                    provider:
+                      type: string
+                      enum: [claude, openai, ollama]
+                    model:
+                      type: string
+                    temperature:
+                      type: number
+                      minimum: 0
+                      maximum: 2
+                    maxTokens:
+                      type: integer
+                    apiKeySecret:
+                      type: string
+                    baseUrl:
+                      type: string
+                system:
+                  type: string
+                tools:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - name
+                    properties:
+                      name:
+                        type: string
+                      config:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                skills:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - name
+                    properties:
+                      name:
+                        type: string
+                      config:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                permissions:
+                  type: object
+                  properties:
+                    filesystem:
+                      type: object
+                      properties:
+                        read:
+                          type: array
+                          items:
+                            type: string
+                        write:
+                          type: array
+                          items:
+                            type: string
+                    network:
+                      type: object
+                      properties:
+                        allowedHosts:
+                          type: array
+                          items:
+                            type: string
+                        deniedHosts:
+                          type: array
+                          items:
+                            type: string
+                    tools:
+                      type: array
+                      items:
+                        type: string
+                    maxConcurrentToolCalls:
+                      type: integer
+                resources:
+                  type: object
+                  properties:
+                    cpu:
+                      type: string
+                    memory:
+                      type: string
+                replicas:
+                  type: integer
+                  minimum: 1
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Pending, Running, Error, Terminated]
+                message:
+                  type: string
+                readyReplicas:
+                  type: integer
+                messagesReceived:
+                  type: integer
+                messagesSent:
+                  type: integer
+                lastActiveAt:
+                  type: string
+                  format: date-time
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Email
+          type: string
+          jsonPath: .spec.identity.email
+        - name: Provider
+          type: string
+          jsonPath: .spec.llm.provider
+        - name: Model
+          type: string
+          jsonPath: .spec.llm.model
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+  scope: Namespaced
+  names:
+    plural: agents
+    singular: agent
+    kind: Agent
+    shortNames:
+      - ag
