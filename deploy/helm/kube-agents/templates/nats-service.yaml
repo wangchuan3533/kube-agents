@@ -1,0 +1,19 @@
+{{- if .Values.nats.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: nats
+  namespace: {{ include "kube-agents.namespace" . }}
+  labels:
+    {{- include "kube-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nats
+    app: nats
+spec:
+  selector:
+    app: nats
+  ports:
+    - port: {{ .Values.nats.clientPort }}
+      name: client
+    - port: {{ .Values.nats.monitorPort }}
+      name: monitor
+{{- end }}

@@ -1,0 +1,41 @@
+{{- if .Values.dashboard.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-agents-dashboard
+  namespace: {{ include "kube-agents.namespace" . }}
+  labels:
+    {{- include "kube-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dashboard
+    app: kube-agents-dashboard
+spec:
+  replicas: {{ .Values.dashboard.replicas }}
+  selector:
+    matchLabels:
+      app: kube-agents-dashboard
+  template:
+    metadata:
+      labels:
+        app: kube-agents-dashboard
+    spec:
+      serviceAccountName: kube-agents-dashboard
+      containers:
+        - name: dashboard
+          image: "{{ .Values.dashboard.image.repository }}:{{ .Values.dashboard.image.tag }}"
+          imagePullPolicy: {{ .Values.dashboard.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.dashboard.port }}
+          env:
+            - name: PORT
+              value: {{ .Values.dashboard.port | quote }}
+            - name: K8S_CONTEXT
+              value: ""
+          resources:
+            {{- toYaml .Values.dashboard.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /api/agents
+              port: {{ .Values.dashboard.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 30
+{{- end }}

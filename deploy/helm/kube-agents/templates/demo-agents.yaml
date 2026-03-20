@@ -1,0 +1,128 @@
+{{- if .Values.demoAgents.enabled }}
+apiVersion: agents.kube-agents.io/v1alpha1
+kind: Agent
+metadata:
+  name: code-agent
+  namespace: {{ include "kube-agents.namespace" . }}
+spec:
+  identity:
+    name: code-agent
+    email: code_agent@{{ .Values.demoAgents.domain }}
+    groups:
+      - engineering@{{ .Values.demoAgents.domain }}
+  llm:
+    provider: claude
+    model: claude-sonnet-4-20250514
+    temperature: 0.3
+    maxTokens: 8192
+  system: |
+    You are a coding agent. You write clean, well-tested TypeScript code.
+    When given a task, you:
+    1. Read relevant files to understand the codebase
+    2. Write or modify code to implement the requested feature
+    3. Reply with a summary of changes made
+
+    Always follow existing code conventions and patterns.
+  tools:
+    - name: file-read
+    - name: file-write
+    - name: shell-exec
+  permissions:
+    filesystem:
+      read: ["/workspace/**"]
+      write: ["/workspace/src/**", "/workspace/tests/**"]
+    network:
+      allowedHosts: ["github.com", "registry.npmjs.org"]
+  resources:
+    cpu: "500m"
+    memory: "512Mi"
+---
+apiVersion: agents.kube-agents.io/v1alpha1
+kind: Agent
+metadata:
+  name: reviewer-agent
+  namespace: {{ include "kube-agents.namespace" . }}
+spec:
+  identity:
+    name: reviewer-agent
+    email: reviewer_agent@{{ .Values.demoAgents.domain }}
+    groups:
+      - engineering@{{ .Values.demoAgents.domain }}
+  llm:
+    provider: claude
+    model: claude-sonnet-4-20250514
+    temperature: 0.2
+    maxTokens: 4096
+  system: |
+    You are a code review agent. You review code changes for:
+    - Correctness and potential bugs
+    - Code quality and readability
+    - Security vulnerabilities
+    - Performance issues
+    - Adherence to project conventions
+
+    When you receive code to review, provide specific, actionable feedback.
+    If the code looks good, approve it with a brief explanation.
+    If changes are needed, list them clearly with file paths and line references.
+  tools:
+    - name: file-read
+  permissions:
+    filesystem:
+      read: ["/workspace/**"]
+      write: []
+  resources:
+    cpu: "500m"
+    memory: "512Mi"
+---
+apiVersion: agents.kube-agents.io/v1alpha1
+kind: Agent
+metadata:
+  name: orchestrator-agent
+  namespace: {{ include "kube-agents.namespace" . }}
+spec:
+  identity:
+    name: orchestrator-agent
+    email: orchestrator@{{ .Values.demoAgents.domain }}
+  llm:
+    provider: claude
+    model: claude-sonnet-4-20250514
+    temperature: 0.5
+    maxTokens: 4096
+  system: |
+    You are an orchestrator agent that manages multi-agent workflows.
+    When you receive a high-level task:
+    1. Break the task into subtasks
+    2. Email each subtask to the appropriate specialist agent
+    3. Track progress by monitoring replies
+    4. Compile results and report back to the requester
+
+    Available agents:
+    - code_agent@{{ .Values.demoAgents.domain }} — writes and modifies code
+    - reviewer_agent@{{ .Values.demoAgents.domain }} — reviews code changes
+    - engineering@{{ .Values.demoAgents.domain }} — broadcast to all engineering agents
+
+    Coordinate agents to complete complex workflows like:
+    - Code → Review → Fix → Re-review cycles
+    - Multi-file feature implementation
+    - Bug investigation and fixing
+  tools: []
+  permissions:
+    filesystem:
+      read: []
+      write: []
+  resources:
+    cpu: "250m"
+    memory: "256Mi"
+---
+apiVersion: agents.kube-agents.io/v1alpha1
+kind: AgentGroup
+metadata:
+  name: engineering-team
+  namespace: {{ include "kube-agents.namespace" . }}
+spec:
+  email: engineering@{{ .Values.demoAgents.domain }}
+  members:
+    - code_agent@{{ .Values.demoAgents.domain }}
+    - reviewer_agent@{{ .Values.demoAgents.domain }}
+  description: All engineering agents
+{{- end }}

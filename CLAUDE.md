@@ -19,6 +19,7 @@ kube-agents is a declarative multi-agent framework for Kubernetes where:
 | `packages/mail` | `@kube-agents/mail` | NATS-backed email messaging system |
 | `packages/llm` | `@kube-agents/llm` | Multi-provider LLM abstraction |
 | `packages/tools` | `@kube-agents/tools` | Built-in tool implementations |
+| `packages/dashboard` | `@kube-agents/dashboard` | Web dashboard for agent monitoring |
 
 ## Coding Conventions
 
@@ -85,7 +86,29 @@ pnpm format
 
 - **NATS**: `docker run -p 4222:4222 -p 8222:8222 nats:latest -js`
 - **K8s**: Use `kind` for local cluster testing
-- **Apply CRDs**: `kubectl apply -f deploy/crds/`
+
+### Kubernetes Deployment (Helm)
+
+All Kubernetes manifests live in `deploy/helm/kube-agents/` as a single Helm chart.
+
+```bash
+# Install / upgrade all components
+helm upgrade --install kube-agents deploy/helm/kube-agents \
+  --namespace kube-agents --create-namespace \
+  --kube-context k8s-local2
+
+# Render templates locally (dry-run)
+helm template kube-agents deploy/helm/kube-agents
+
+# Uninstall
+helm uninstall kube-agents --namespace kube-agents --kube-context k8s-local2
+```
+
+Components can be toggled in `values.yaml`:
+- `nats.enabled` — NATS messaging (StatefulSet + JetStream)
+- `operator.enabled` — kube-agents operator
+- `dashboard.enabled` — Web monitoring dashboard
+- `demoAgents.enabled` — Demo agents (code, reviewer, orchestrator) and group
 
 ## Commit Messages
 

@@ -1,0 +1,61 @@
+global:
+  namespace: kube-agents
+
+nats:
+  enabled: true
+  image:
+    repository: nats
+    tag: "2.10-alpine"
+  replicas: 1
+  clientPort: 4222
+  monitorPort: 8222
+  jetstream:
+    maxMem: "1G"
+    maxFile: "10G"
+  persistence:
+    size: "10Gi"
+    accessMode: ReadWriteOnce
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+
+operator:
+  enabled: true
+  image:
+    repository: kube-agents/operator
+    tag: latest
+  replicas: 1
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+
+dashboard:
+  enabled: true
+  image:
+    repository: 192.168.1.50:5000/kube-agents/dashboard
+    tag: latest
+    pullPolicy: Never
+  replicas: 1
+  port: 3001
+  service:
+    type: NodePort
+    nodePort: 30080
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+demoAgents:
+  enabled: true
+  domain: agents.mycompany.com

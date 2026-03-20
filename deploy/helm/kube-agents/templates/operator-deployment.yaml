@@ -1,0 +1,34 @@
+{{- if .Values.operator.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-agents-operator
+  namespace: {{ include "kube-agents.namespace" . }}
+  labels:
+    {{- include "kube-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+    app: kube-agents-operator
+spec:
+  replicas: {{ .Values.operator.replicas }}
+  selector:
+    matchLabels:
+      app: kube-agents-operator
+  template:
+    metadata:
+      labels:
+        app: kube-agents-operator
+    spec:
+      serviceAccountName: kube-agents-operator
+      containers:
+        - name: operator
+          image: "{{ .Values.operator.image.repository }}:{{ .Values.operator.image.tag }}"
+          env:
+            - name: NATS_URL
+              value: {{ include "kube-agents.natsUrl" . | quote }}
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          resources:
+            {{- toYaml .Values.operator.resources | nindent 12 }}
+{{- end }}

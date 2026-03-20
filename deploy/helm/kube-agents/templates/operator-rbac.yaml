@@ -1,0 +1,38 @@
+{{- if .Values.operator.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-agents-operator
+  labels:
+    {{- include "kube-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+rules:
+  - apiGroups: ["agents.kube-agents.io"]
+    resources: ["agents", "agentgroups"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["agents.kube-agents.io"]
+    resources: ["agents/status", "agentgroups/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-agents-operator
+  labels:
+    {{- include "kube-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-agents-operator
+subjects:
+  - kind: ServiceAccount
+    name: kube-agents-operator
+    namespace: {{ include "kube-agents.namespace" . }}
+{{- end }}
