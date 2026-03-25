@@ -137,11 +137,6 @@ export class PodManager {
                 memory: spec.resources.memory,
               },
             },
-            livenessProbe: {
-              httpGet: { path: '/healthz', port: 8080 } as unknown as k8s.V1HTTPGetAction,
-              initialDelaySeconds: 10,
-              periodSeconds: 30,
-            },
           },
         ],
         volumes: [
