@@ -1,12 +1,21 @@
 import * as k8s from '@kubernetes/client-node';
 
 const kc = new k8s.KubeConfig();
-kc.loadFromDefault();
 
-const K8S_CONTEXT = process.env['K8S_CONTEXT'] ?? 'k8s-local2';
-const contextObj = kc.getContexts().find((ctx) => ctx.name === K8S_CONTEXT);
-if (contextObj) {
-  kc.setCurrentContext(K8S_CONTEXT);
+// Use in-cluster config when running inside K8s, fall back to default kubeconfig
+try {
+  kc.loadFromCluster();
+  console.log('[k8s-client] Using in-cluster config');
+} catch {
+  kc.loadFromDefault();
+  const K8S_CONTEXT = process.env['K8S_CONTEXT'] ?? '';
+  if (K8S_CONTEXT) {
+    const contextObj = kc.getContexts().find((ctx) => ctx.name === K8S_CONTEXT);
+    if (contextObj) {
+      kc.setCurrentContext(K8S_CONTEXT);
+    }
+  }
+  console.log(`[k8s-client] Using kubeconfig context: ${kc.getCurrentContext()}`);
 }
 
 const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
