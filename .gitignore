@@ -6,3 +6,5 @@ dist/
 .env.*
 coverage/
 *.log
+.claude/
+.playwright-mcp/

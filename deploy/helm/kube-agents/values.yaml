@@ -13,6 +13,7 @@ nats:
     maxMem: "1G"
     maxFile: "10G"
   persistence:
+    enabled: false
     size: "10Gi"
     accessMode: ReadWriteOnce
   resources:
@@ -28,6 +29,7 @@ operator:
   image:
     repository: kube-agents/operator
     tag: latest
+    pullPolicy: Never
   replicas: 1
   resources:
     requests:

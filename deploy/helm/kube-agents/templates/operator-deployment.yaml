@@ -22,6 +22,7 @@ spec:
       containers:
         - name: operator
           image: "{{ .Values.operator.image.repository }}:{{ .Values.operator.image.tag }}"
+          imagePullPolicy: {{ .Values.operator.image.pullPolicy | default "IfNotPresent" }}
           env:
             - name: NATS_URL
               value: {{ include "kube-agents.natsUrl" . | quote }}

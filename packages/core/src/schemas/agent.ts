@@ -39,6 +39,9 @@ export const AgentStatusSchema = z.object({
   readyReplicas: z.number().int().default(0),
   messagesReceived: z.number().int().default(0),
   messagesSent: z.number().int().default(0),
+  totalTokensUsed: z.number().int().default(0),
+  promptTokens: z.number().int().default(0),
+  completionTokens: z.number().int().default(0),
   lastActiveAt: z.coerce.date().optional(),
 });
 

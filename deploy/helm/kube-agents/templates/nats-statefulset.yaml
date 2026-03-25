@@ -47,6 +47,11 @@ spec:
         - name: config
           configMap:
             name: nats-config
+        {{- if not .Values.nats.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+  {{- if .Values.nats.persistence.enabled }}
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -55,4 +60,5 @@ spec:
         resources:
           requests:
             storage: {{ .Values.nats.persistence.size }}
+  {{- end }}
 {{- end }}

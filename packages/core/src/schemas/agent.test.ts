@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AgentSpecSchema, AgentResourceSchema } from './agent.js';
+import { AgentSpecSchema, AgentResourceSchema, AgentStatusSchema } from './agent.js';
 
 describe('AgentSpecSchema', () => {
   it('validates a minimal agent spec', () => {
@@ -75,6 +75,31 @@ describe('AgentSpecSchema', () => {
         system: 'test',
       }),
     ).toThrow();
+  });
+});
+
+describe('AgentStatusSchema', () => {
+  it('defaults token fields to 0', () => {
+    const result = AgentStatusSchema.parse({ phase: 'Running' });
+
+    expect(result.totalTokensUsed).toBe(0);
+    expect(result.promptTokens).toBe(0);
+    expect(result.completionTokens).toBe(0);
+    expect(result.messagesReceived).toBe(0);
+    expect(result.messagesSent).toBe(0);
+  });
+
+  it('accepts explicit token values', () => {
+    const result = AgentStatusSchema.parse({
+      phase: 'Running',
+      totalTokensUsed: 5000,
+      promptTokens: 3000,
+      completionTokens: 2000,
+    });
+
+    expect(result.totalTokensUsed).toBe(5000);
+    expect(result.promptTokens).toBe(3000);
+    expect(result.completionTokens).toBe(2000);
   });
 });
 
