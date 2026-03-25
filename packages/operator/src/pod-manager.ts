@@ -1,6 +1,11 @@
 import * as k8s from '@kubernetes/client-node';
 import { type AgentSpec, LABELS, FULL_API_VERSION } from '@kube-agents/core';
 
+/** Sanitize a string for use as a K8s label value (alphanumeric, '-', '_', '.'). */
+function sanitizeLabelValue(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 63);
+}
+
 const RUNTIME_IMAGE = 'kube-agents/runtime:latest';
 
 export class PodManager {
@@ -92,10 +97,11 @@ export class PodManager {
         labels: {
           [LABELS.MANAGED_BY]: 'kube-agents-operator',
           [LABELS.AGENT_NAME]: agentName,
-          [LABELS.AGENT_EMAIL]: spec.identity.email,
+          [LABELS.AGENT_EMAIL]: sanitizeLabelValue(spec.identity.email),
         },
         annotations: {
           'agents.kube-agents.io/api-version': FULL_API_VERSION,
+          'agents.kube-agents.io/agent-email': spec.identity.email,
         },
       },
       spec: {
@@ -103,6 +109,7 @@ export class PodManager {
           {
             name: 'agent-runtime',
             image: RUNTIME_IMAGE,
+            imagePullPolicy: 'Never',
             env: [
               {
                 name: 'AGENT_CONFIG_PATH',
