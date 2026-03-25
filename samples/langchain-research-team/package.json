@@ -1,0 +1,33 @@
+{
+  "name": "@kube-agents/sample-langchain-research-team",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Sample multi-agent research team built with LangChain on kube-agents",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kube-agents/core": "workspace:*",
+    "@kube-agents/mail": "workspace:*",
+    "@langchain/core": "^0.3.0",
+    "@langchain/langgraph": "^0.2.0",
+    "@langchain/openai": "^0.4.0",
+    "nats": "^2.29.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.7.0"
+  },
+  "tsup": {
+    "entry": ["src/main.ts"],
+    "format": ["esm"],
+    "dts": false,
+    "clean": true,
+    "sourcemap": true
+  }
+}

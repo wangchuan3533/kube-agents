@@ -1,0 +1,290 @@
+# LangChain Research Team — kube-agents sample
+#
+# Prerequisites:
+#   1. NATS must be running (deployed via the kube-agents Helm chart)
+#   2. A Kubernetes Secret "anthropic-api-key" with key "api-key" must exist
+#   3. The container image must be built and available to the cluster
+#
+# Deploy:
+#   kubectl apply -f samples/langchain-research-team/k8s/manifests.yaml -n kube-agents
+
+---
+# Secret for the Anthropic API key (replace the value before applying)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: anthropic-api-key
+  namespace: kube-agents
+type: Opaque
+stringData:
+  api-key: "YOUR_ANTHROPIC_API_KEY_HERE"
+
+---
+# ── Researcher Agent ──────────────────────────────────────────────
+apiVersion: agents.kube-agents.io/v1alpha1
+kind: Agent
+metadata:
+  name: lc-researcher
+  namespace: kube-agents
+  labels:
+    app.kubernetes.io/part-of: langchain-research-team
+    kube-agents.io/runtime: langchain
+spec:
+  identity:
+    name: researcher
+    email: researcher@research.kube-agents.local
+    groups:
+      - research_team@research.kube-agents.local
+  llm:
+    provider: claude
+    model: claude-sonnet-4-20250514
+    temperature: 0.3
+    maxTokens: 4096
+    apiKeySecret: anthropic-api-key
+  system: |
+    You are a Research Agent. Search the web for information,
+    collect findings, and forward them to the analyst agent.
+  tools:
+    - name: web_search
+    - name: save_note
+    - name: read_note
+    - name: list_notes
+    - name: send_email
+  permissions:
+    network:
+      allowedHosts: ["*"]
+  resources:
+    cpu: "500m"
+    memory: "512Mi"
+
+---
+# ── Analyst Agent ─────────────────────────────────────────────────
+apiVersion: agents.kube-agents.io/v1alpha1
+kind: Agent
+metadata:
+  name: lc-analyst
+  namespace: kube-agents
+  labels:
+    app.kubernetes.io/part-of: langchain-research-team
+    kube-agents.io/runtime: langchain
+spec:
+  identity:
+    name: analyst
+    email: analyst@research.kube-agents.local
+    groups:
+      - research_team@research.kube-agents.local
+  llm:
+    provider: claude
+    model: claude-sonnet-4-20250514
+    temperature: 0.2
+    maxTokens: 4096
+    apiKeySecret: anthropic-api-key
+  system: |
+    You are an Analyst Agent. Analyze research findings,
+    identify patterns and insights, and forward your analysis
+    to the writer agent.
+  tools:
+    - name: save_note
+    - name: read_note
+    - name: list_notes
+    - name: send_email
+  permissions:
+    network:
+      allowedHosts: []
+  resources:
+    cpu: "500m"
+    memory: "512Mi"
+
+---
+# ── Writer Agent ──────────────────────────────────────────────────
+apiVersion: agents.kube-agents.io/v1alpha1
+kind: Agent
+metadata:
+  name: lc-writer
+  namespace: kube-agents
+  labels:
+    app.kubernetes.io/part-of: langchain-research-team
+    kube-agents.io/runtime: langchain
+spec:
+  identity:
+    name: writer
+    email: writer@research.kube-agents.local
+    groups:
+      - research_team@research.kube-agents.local
+  llm:
+    provider: claude
+    model: claude-sonnet-4-20250514
+    temperature: 0.5
+    maxTokens: 8192
+    apiKeySecret: anthropic-api-key
+  system: |
+    You are a Writer Agent. Transform structured analysis into
+    polished research reports and deliver them to the requester.
+  tools:
+    - name: save_note
+    - name: read_note
+    - name: list_notes
+    - name: send_email
+  permissions:
+    network:
+      allowedHosts: []
+  resources:
+    cpu: "500m"
+    memory: "512Mi"
+
+---
+# ── Agent Group ───────────────────────────────────────────────────
+apiVersion: agents.kube-agents.io/v1alpha1
+kind: AgentGroup
+metadata:
+  name: research-team
+  namespace: kube-agents
+  labels:
+    app.kubernetes.io/part-of: langchain-research-team
+spec:
+  email: research_team@research.kube-agents.local
+  members:
+    - researcher@research.kube-agents.local
+    - analyst@research.kube-agents.local
+    - writer@research.kube-agents.local
+  description: LangChain-powered research team — researcher, analyst, and writer agents
+
+---
+# ── Deployments (one per agent, each with different AGENT_ROLE) ──
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lc-researcher
+  namespace: kube-agents
+  labels:
+    app.kubernetes.io/part-of: langchain-research-team
+    app.kubernetes.io/component: researcher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: researcher
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: langchain-research-team
+        app.kubernetes.io/component: researcher
+    spec:
+      containers:
+        - name: agent
+          image: kube-agents/langchain-research-team:latest
+          imagePullPolicy: Never
+          env:
+            - name: AGENT_ROLE
+              value: researcher
+            - name: AGENT_EMAIL
+              value: researcher@research.kube-agents.local
+            - name: AGENT_GROUPS
+              value: research_team@research.kube-agents.local
+            - name: NATS_URL
+              value: nats://nats.kube-agents.svc.cluster.local:4222
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: anthropic-api-key
+                  key: api-key
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lc-analyst
+  namespace: kube-agents
+  labels:
+    app.kubernetes.io/part-of: langchain-research-team
+    app.kubernetes.io/component: analyst
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: analyst
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: langchain-research-team
+        app.kubernetes.io/component: analyst
+    spec:
+      containers:
+        - name: agent
+          image: kube-agents/langchain-research-team:latest
+          imagePullPolicy: Never
+          env:
+            - name: AGENT_ROLE
+              value: analyst
+            - name: AGENT_EMAIL
+              value: analyst@research.kube-agents.local
+            - name: AGENT_GROUPS
+              value: research_team@research.kube-agents.local
+            - name: NATS_URL
+              value: nats://nats.kube-agents.svc.cluster.local:4222
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: anthropic-api-key
+                  key: api-key
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lc-writer
+  namespace: kube-agents
+  labels:
+    app.kubernetes.io/part-of: langchain-research-team
+    app.kubernetes.io/component: writer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: writer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: langchain-research-team
+        app.kubernetes.io/component: writer
+    spec:
+      containers:
+        - name: agent
+          image: kube-agents/langchain-research-team:latest
+          imagePullPolicy: Never
+          env:
+            - name: AGENT_ROLE
+              value: writer
+            - name: AGENT_EMAIL
+              value: writer@research.kube-agents.local
+            - name: AGENT_GROUPS
+              value: research_team@research.kube-agents.local
+            - name: NATS_URL
+              value: nats://nats.kube-agents.svc.cluster.local:4222
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: anthropic-api-key
+                  key: api-key
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
