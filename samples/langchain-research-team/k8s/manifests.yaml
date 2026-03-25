@@ -2,22 +2,20 @@
 #
 # Prerequisites:
 #   1. NATS must be running (deployed via the kube-agents Helm chart)
-#   2. A Kubernetes Secret "anthropic-api-key" with key "api-key" must exist
+#   2. A Kubernetes Secret "azure-openai-credentials" with keys below must exist:
+#        - api-key: Azure OpenAI subscription key
+#        - endpoint: Azure OpenAI endpoint URL (e.g. https://myinstance.openai.azure.com)
+#        - deployment: Model deployment name (e.g. gpt-5.4)
 #   3. The container image must be built and available to the cluster
+#
+# Create the secret:
+#   kubectl create secret generic azure-openai-credentials -n kube-agents \
+#     --from-literal=api-key=YOUR_KEY \
+#     --from-literal=endpoint=https://YOUR_INSTANCE.openai.azure.com \
+#     --from-literal=deployment=YOUR_DEPLOYMENT_NAME
 #
 # Deploy:
 #   kubectl apply -f samples/langchain-research-team/k8s/manifests.yaml -n kube-agents
-
----
-# Secret for the Anthropic API key (replace the value before applying)
-apiVersion: v1
-kind: Secret
-metadata:
-  name: anthropic-api-key
-  namespace: kube-agents
-type: Opaque
-stringData:
-  api-key: "YOUR_ANTHROPIC_API_KEY_HERE"
 
 ---
 # ── Researcher Agent ──────────────────────────────────────────────
@@ -36,11 +34,11 @@ spec:
     groups:
       - research_team@research.kube-agents.local
   llm:
-    provider: claude
-    model: claude-sonnet-4-20250514
+    provider: azure-openai
+    model: gpt-5.4
     temperature: 0.3
     maxTokens: 4096
-    apiKeySecret: anthropic-api-key
+    apiKeySecret: azure-openai-credentials
   system: |
     You are a Research Agent. Search the web for information,
     collect findings, and forward them to the analyst agent.
@@ -74,11 +72,11 @@ spec:
     groups:
       - research_team@research.kube-agents.local
   llm:
-    provider: claude
-    model: claude-sonnet-4-20250514
+    provider: azure-openai
+    model: gpt-5.4
     temperature: 0.2
     maxTokens: 4096
-    apiKeySecret: anthropic-api-key
+    apiKeySecret: azure-openai-credentials
   system: |
     You are an Analyst Agent. Analyze research findings,
     identify patterns and insights, and forward your analysis
@@ -112,11 +110,11 @@ spec:
     groups:
       - research_team@research.kube-agents.local
   llm:
-    provider: claude
-    model: claude-sonnet-4-20250514
+    provider: azure-openai
+    model: gpt-5.4
     temperature: 0.5
     maxTokens: 8192
-    apiKeySecret: anthropic-api-key
+    apiKeySecret: azure-openai-credentials
   system: |
     You are a Writer Agent. Transform structured analysis into
     polished research reports and deliver them to the requester.
@@ -184,11 +182,21 @@ spec:
               value: research_team@research.kube-agents.local
             - name: NATS_URL
               value: nats://nats.kube-agents.svc.cluster.local:4222
-            - name: ANTHROPIC_API_KEY
+            - name: AZURE_OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: anthropic-api-key
+                  name: azure-openai-credentials
                   key: api-key
+            - name: AZURE_OPENAI_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: azure-openai-credentials
+                  key: endpoint
+            - name: AZURE_OPENAI_DEPLOYMENT
+              valueFrom:
+                secretKeyRef:
+                  name: azure-openai-credentials
+                  key: deployment
           resources:
             requests:
               cpu: 100m
@@ -230,11 +238,21 @@ spec:
               value: research_team@research.kube-agents.local
             - name: NATS_URL
               value: nats://nats.kube-agents.svc.cluster.local:4222
-            - name: ANTHROPIC_API_KEY
+            - name: AZURE_OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: anthropic-api-key
+                  name: azure-openai-credentials
                   key: api-key
+            - name: AZURE_OPENAI_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: azure-openai-credentials
+                  key: endpoint
+            - name: AZURE_OPENAI_DEPLOYMENT
+              valueFrom:
+                secretKeyRef:
+                  name: azure-openai-credentials
+                  key: deployment
           resources:
             requests:
               cpu: 100m
@@ -276,11 +294,21 @@ spec:
               value: research_team@research.kube-agents.local
             - name: NATS_URL
               value: nats://nats.kube-agents.svc.cluster.local:4222
-            - name: ANTHROPIC_API_KEY
+            - name: AZURE_OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: anthropic-api-key
+                  name: azure-openai-credentials
                   key: api-key
+            - name: AZURE_OPENAI_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: azure-openai-credentials
+                  key: endpoint
+            - name: AZURE_OPENAI_DEPLOYMENT
+              valueFrom:
+                secretKeyRef:
+                  name: azure-openai-credentials
+                  key: deployment
           resources:
             requests:
               cpu: 100m

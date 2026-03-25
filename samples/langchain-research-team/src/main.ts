@@ -10,8 +10,9 @@
  *   AGENT_EMAIL       — agent email address (required)
  *   AGENT_GROUPS      — comma-separated group emails (optional)
  *   NATS_URL          — NATS server URL (default: nats://nats:4222)
- *   ANTHROPIC_API_KEY — Claude API key (required)
- *   LLM_MODEL         — model override (default: claude-sonnet-4-20250514)
+ *   AZURE_OPENAI_API_KEY     — Azure OpenAI key (required)
+ *   AZURE_OPENAI_ENDPOINT    — Azure OpenAI endpoint URL (required)
+ *   AZURE_OPENAI_DEPLOYMENT  — deployment name (default: gpt-5.4)
  */
 import type { AgentIdentity } from '@kube-agents/core';
 import { MailBridge, type GraphFactory } from './mail-bridge.js';

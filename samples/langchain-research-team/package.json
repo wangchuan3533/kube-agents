@@ -28,6 +28,7 @@
     "format": ["esm"],
     "dts": false,
     "clean": true,
-    "sourcemap": true
+    "sourcemap": true,
+    "noExternal": ["@kube-agents/core", "@kube-agents/mail"]
   }
 }

@@ -44,7 +44,7 @@ The bridge is the `MailBridge` class in `src/mail-bridge.ts`:
 ## Prerequisites
 
 - Kubernetes cluster with kube-agents Helm chart deployed (NATS must be running)
-- Anthropic API key
+- Azure OpenAI credentials (API key, endpoint, deployment name)
 
 ## Local Development
 
@@ -57,7 +57,9 @@ cd samples/langchain-research-team
 AGENT_ROLE=researcher \
 AGENT_EMAIL=researcher@research.kube-agents.local \
 NATS_URL=nats://localhost:4222 \
-ANTHROPIC_API_KEY=sk-ant-... \
+AZURE_OPENAI_API_KEY=your-key \
+AZURE_OPENAI_ENDPOINT=https://your-instance.openai.azure.com \
+AZURE_OPENAI_DEPLOYMENT=gpt-5.4 \
 pnpm dev
 ```
 
@@ -65,18 +67,24 @@ pnpm dev
 
 ```bash
 # 1. Build the container image
+cd samples/langchain-research-team
 docker build --platform linux/amd64 \
-  -t kube-agents/langchain-research-team:latest \
-  -f samples/langchain-research-team/Dockerfile .
+  -t kube-agents/langchain-research-team:latest .
 
 # 2. Transfer to your cluster node
 docker save kube-agents/langchain-research-team:latest | \
   ssh k8s-local2 "sudo ctr -n k8s.io images import --platform linux/amd64 -"
 
-# 3. Update the API key in manifests.yaml, then apply
-kubectl apply -f samples/langchain-research-team/k8s/manifests.yaml -n kube-agents
+# 3. Create the Azure OpenAI credentials secret
+kubectl create secret generic azure-openai-credentials -n kube-agents \
+  --from-literal=api-key=YOUR_KEY \
+  --from-literal=endpoint=https://YOUR_INSTANCE.openai.azure.com \
+  --from-literal=deployment=YOUR_DEPLOYMENT_NAME
 
-# 4. Verify all three agents are running
+# 4. Apply the manifests
+kubectl apply -f k8s/manifests.yaml -n kube-agents
+
+# 5. Verify all three agents are running
 kubectl get pods -n kube-agents -l app.kubernetes.io/part-of=langchain-research-team
 ```
 
@@ -84,7 +92,7 @@ kubectl get pods -n kube-agents -l app.kubernetes.io/part-of=langchain-research-
 
 - **Replace web search**: Swap `src/tools/web-search.ts` with a real search API (Tavily, SerpAPI, Brave Search via `@langchain/community`)
 - **Add agents**: Create a new agent in `src/agents/`, register it in `AGENT_FACTORIES` in `main.ts`, add a Deployment to `manifests.yaml`
-- **Change LLM**: Set `LLM_MODEL` env var or modify the `ChatAnthropic` constructor in each agent
+- **Change LLM provider**: Modify `src/llm.ts` to use a different LangChain chat model (e.g. `ChatAnthropic`, `ChatOpenAI`)
 - **Add tools**: Create LangChain tools in `src/tools/` and add them to the agent's tool array
 
 ## Files
@@ -93,6 +101,7 @@ kubectl get pods -n kube-agents -l app.kubernetes.io/part-of=langchain-research-
 src/
 ├── main.ts              # Entry point — routes to the right agent via AGENT_ROLE
 ├── mail-bridge.ts       # Bridges NATS mailbox ↔ LangGraph
+├── llm.ts               # Shared LLM factory (Azure OpenAI)
 ├── agents/
 │   ├── researcher.ts    # Web search + note-taking agent
 │   ├── analyst.ts       # Data analysis agent
