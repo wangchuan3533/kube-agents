@@ -30,6 +30,8 @@ spec:
               value: {{ .Values.dashboard.port | quote }}
             - name: K8S_CONTEXT
               value: ""
+            - name: NATS_URL
+              value: {{ .Values.dashboard.nats.url | default (printf "nats://nats.%s.svc.cluster.local:4222" (include "kube-agents.namespace" .)) | quote }}
           resources:
             {{- toYaml .Values.dashboard.resources | nindent 12 }}
           livenessProbe:

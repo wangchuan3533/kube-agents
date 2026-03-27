@@ -11,6 +11,12 @@ export function Header({ lastUpdated, onRefresh }: HeaderProps) {
         <p className="text-gray-400 text-sm mt-1">Agent status overview</p>
       </div>
       <div className="flex items-center gap-4">
+        <a
+          href="#/traces"
+          className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-sm border border-gray-700 transition-colors"
+        >
+          Traces
+        </a>
         {lastUpdated && (
           <span className="text-gray-500 text-xs">
             Updated {lastUpdated.toLocaleTimeString()}

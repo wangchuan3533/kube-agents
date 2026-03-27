@@ -50,6 +50,8 @@ dashboard:
   service:
     type: NodePort
     nodePort: 30080
+  nats:
+    url: ""  # auto-detected from NATS service if empty
   resources:
     requests:
       cpu: "50m"

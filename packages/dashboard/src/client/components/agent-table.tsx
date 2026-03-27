@@ -39,7 +39,14 @@ export function AgentTable({ agents }: AgentTableProps) {
           <tbody className="divide-y divide-gray-800">
             {agents.map((agent) => (
               <tr key={agent.metadata.name} className="hover:bg-gray-900/50">
-                <td className="px-4 py-3 font-medium text-white">{agent.metadata.name}</td>
+                <td className="px-4 py-3 font-medium">
+                  <a
+                    href={`#/agents/${agent.metadata.namespace}/${agent.metadata.name}`}
+                    className="text-blue-400 hover:text-blue-300"
+                  >
+                    {agent.metadata.name}
+                  </a>
+                </td>
                 <td className="px-4 py-3 text-gray-300">{agent.spec.identity.email}</td>
                 <td className="px-4 py-3 text-gray-300">
                   <span className="text-gray-500">{agent.spec.llm.provider}/</span>

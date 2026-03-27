@@ -2,6 +2,17 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { api } from './routes.js';
+import { initNats, initTraceConsumer } from './nats-client.js';
+
+// Initialize NATS connection (non-blocking — dashboard works without it)
+await initNats().catch(() => {
+  console.warn('[server] NATS initialization failed. Message inspection will be unavailable.');
+});
+
+// Start trace consumer (non-blocking — traces work only when NATS + trace stream are available)
+await initTraceConsumer().catch(() => {
+  console.warn('[server] Trace consumer initialization failed. Tracing will be unavailable.');
+});
 
 const app = new Hono();
 

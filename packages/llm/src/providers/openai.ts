@@ -10,9 +10,20 @@ export class OpenAIProvider implements LLMProviderInterface {
 
   constructor(config: LLMConfig, apiKey?: string) {
     this.config = config;
+    const key = apiKey ?? process.env['OPENAI_API_KEY'];
+    const isAzure = config.baseUrl?.includes('.cognitiveservices.azure.com');
+
     this.client = new OpenAI({
-      apiKey: apiKey ?? process.env['OPENAI_API_KEY'],
+      apiKey: key,
+      timeout: 120_000, // 2 minute timeout
+      maxRetries: 2,
       ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
+      ...(isAzure
+        ? {
+            defaultHeaders: { 'api-key': key ?? '' },
+            apiKey: 'unused', // SDK requires non-empty but Azure uses header
+          }
+        : {}),
     });
   }
 
@@ -65,9 +76,10 @@ export class OpenAIProvider implements LLMProviderInterface {
         },
       }));
 
+      const maxTokens = request.maxTokens ?? this.config.maxTokens;
       const response = await this.client.chat.completions.create({
         model: this.config.model,
-        max_tokens: request.maxTokens ?? this.config.maxTokens,
+        max_completion_tokens: maxTokens,
         temperature: request.temperature ?? this.config.temperature,
         messages,
         ...(tools?.length ? { tools } : {}),

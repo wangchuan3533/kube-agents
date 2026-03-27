@@ -119,6 +119,19 @@ export class PodManager {
                 name: 'NATS_URL',
                 value: process.env['NATS_URL'] ?? 'nats://nats:4222',
               },
+              ...(spec.llm.apiKeySecret
+                ? [
+                    {
+                      name: 'LLM_API_KEY',
+                      valueFrom: {
+                        secretKeyRef: {
+                          name: spec.llm.apiKeySecret,
+                          key: 'api-key',
+                        },
+                      },
+                    },
+                  ]
+                : []),
             ],
             volumeMounts: [
               {

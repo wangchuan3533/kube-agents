@@ -5,3 +5,4 @@ export * from './tools.js';
 export * from './permissions.js';
 export * from './agent.js';
 export * from './agent-group.js';
+export * from './trace.js';

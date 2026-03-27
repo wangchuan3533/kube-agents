@@ -6,4 +6,6 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   outDir: 'dist/server',
+  noExternal: [/^@kube-agents\//],
+  external: ['nats', '@kubernetes/client-node'],
 });

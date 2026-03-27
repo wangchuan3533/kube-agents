@@ -11,6 +11,8 @@ export const NATS_SUBJECTS = {
   directMail: (email: string) => `mail.${email.replace('@', '.')}`,
   groupMail: (groupEmail: string) => `mail.group.${groupEmail.replace('@', '.')}`,
   deadLetter: 'mail.dead-letter',
+  traceRun: (agentName: string) => `trace.run.${agentName}`,
+  traceSpan: (agentName: string) => `trace.span.${agentName}`,
 } as const;
 
 export const LABELS = {
@@ -20,3 +22,5 @@ export const LABELS = {
 } as const;
 
 export const STREAM_NAME = 'KUBE_AGENTS_MAIL';
+export const TRACE_STREAM_NAME = 'KUBE_AGENTS_TRACES';
+export const TRACE_STREAM_SUBJECTS = ['trace.>'];

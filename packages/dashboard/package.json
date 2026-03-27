@@ -17,8 +17,11 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",
+    "@kube-agents/core": "workspace:*",
+    "@kube-agents/mail": "workspace:*",
     "@kubernetes/client-node": "^1.0.0",
-    "hono": "^4.7.0"
+    "hono": "^4.7.0",
+    "nats": "^2.28.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

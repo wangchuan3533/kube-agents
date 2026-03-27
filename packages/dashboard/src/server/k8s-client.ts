@@ -28,7 +28,17 @@ export interface K8sAgent {
   metadata: { name: string; namespace: string; creationTimestamp: string };
   spec: {
     identity: { name: string; email: string; groups?: string[] };
-    llm: { provider: string; model: string };
+    llm: { provider: string; model: string; temperature?: number; maxTokens?: number };
+    system?: string;
+    tools?: Array<{ name: string; config?: Record<string, unknown> }>;
+    skills?: Array<{ name: string; config?: Record<string, unknown> }>;
+    permissions?: {
+      filesystem?: { read?: string[]; write?: string[] };
+      network?: { allowedHosts?: string[]; deniedHosts?: string[] };
+      tools?: string[];
+      maxConcurrentToolCalls?: number;
+    };
+    resources?: { cpu?: string; memory?: string };
     replicas: number;
   };
   status?: {
@@ -124,6 +134,42 @@ export async function listAgents(namespace: string): Promise<K8sAgent[]> {
       },
     };
   });
+}
+
+export async function getAgent(namespace: string, name: string): Promise<K8sAgent | null> {
+  try {
+    const [agentResponse, podStatuses] = await Promise.all([
+      customApi.getNamespacedCustomObject({
+        group: GROUP,
+        version: VERSION,
+        namespace,
+        plural: 'agents',
+        name,
+      }),
+      getAgentPodStatuses(namespace),
+    ]);
+
+    const agent = agentResponse as K8sAgent;
+    const pod = podStatuses.get(agent.metadata.name);
+    const isReady = pod?.status?.containerStatuses?.every((c) => c.ready) ?? false;
+
+    return {
+      ...agent,
+      status: {
+        phase: agent.status?.phase ?? podPhase(pod),
+        message: agent.status?.message,
+        readyReplicas: agent.status?.readyReplicas ?? (isReady ? 1 : 0),
+        messagesReceived: agent.status?.messagesReceived ?? 0,
+        messagesSent: agent.status?.messagesSent ?? 0,
+        totalTokensUsed: agent.status?.totalTokensUsed ?? 0,
+        promptTokens: agent.status?.promptTokens ?? 0,
+        completionTokens: agent.status?.completionTokens ?? 0,
+        lastActiveAt: agent.status?.lastActiveAt,
+      },
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function listAgentGroups(namespace: string): Promise<K8sAgentGroup[]> {

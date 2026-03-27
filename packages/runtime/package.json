@@ -22,7 +22,8 @@
     "@kube-agents/core": "workspace:*",
     "@kube-agents/mail": "workspace:*",
     "@kube-agents/llm": "workspace:*",
-    "@kube-agents/tools": "workspace:*"
+    "@kube-agents/tools": "workspace:*",
+    "nats": "^2.29.0"
   },
   "devDependencies": {
     "tsup": "^8.4.0",
