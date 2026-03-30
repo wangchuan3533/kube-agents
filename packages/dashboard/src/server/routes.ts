@@ -138,35 +138,34 @@ api.get('/overview', async (c) => {
 // Project endpoints
 // ---------------------------------------------------------------------------
 
-api.get('/projects', (c) => {
-  const projects = listProjects();
-  const stats = getProjectStats();
+api.get('/projects', async (c) => {
+  const [projects, stats] = await Promise.all([listProjects(), getProjectStats()]);
   return c.json({ projects, stats });
 });
 
-api.get('/projects/:name', (c) => {
+api.get('/projects/:name', async (c) => {
   const { name } = c.req.param();
-  const project = getProjectByName(name);
+  const project = await getProjectByName(name);
   if (!project) return c.json({ error: 'Project not found' }, 404);
   return c.json(project);
 });
 
-api.get('/projects/:name/traces', (c) => {
+api.get('/projects/:name/traces', async (c) => {
   const { name } = c.req.param();
-  const project = getProjectByName(name);
+  const project = await getProjectByName(name);
   if (!project) return c.json({ error: 'Project not found' }, 404);
 
   const status = c.req.query('status');
   const limit = Number(c.req.query('limit') ?? '50');
   const offset = Number(c.req.query('offset') ?? '0');
-  return c.json(listTraces({ projectId: project.id, status, limit, offset }));
+  return c.json(await listTraces({ projectId: project.id, status, limit, offset }));
 });
 
 // ---------------------------------------------------------------------------
 // Trace endpoints (SQLite-backed)
 // ---------------------------------------------------------------------------
 
-api.get('/traces', (c) => {
+api.get('/traces', async (c) => {
   const agentName = c.req.query('agentName');
   const status = c.req.query('status');
   const sessionId = c.req.query('sessionId');
@@ -176,43 +175,42 @@ api.get('/traces', (c) => {
   // If filtering by agentName, resolve project first
   let projectId: string | undefined;
   if (agentName) {
-    const project = getProjectByName(agentName);
+    const project = await getProjectByName(agentName);
     projectId = project?.id;
     if (!projectId) {
       return c.json({ traces: [], total: 0, hasMore: false });
     }
   }
 
-  return c.json(listTraces({ projectId, sessionId, status, limit, offset }));
+  return c.json(await listTraces({ projectId, sessionId, status, limit, offset }));
 });
 
-api.get('/traces/:traceId', (c) => {
+api.get('/traces/:traceId', async (c) => {
   const { traceId } = c.req.param();
-  const trace = getTrace(traceId);
+  const trace = await getTrace(traceId);
   if (!trace) return c.json({ error: 'Trace not found' }, 404);
-  const runs = listRunsForTrace(traceId);
-  const feedback = listFeedbackForTrace(traceId);
+  const [runs, feedback] = await Promise.all([listRunsForTrace(traceId), listFeedbackForTrace(traceId)]);
   return c.json({ trace, runs, feedback });
 });
 
-api.get('/traces/:traceId/runs', (c) => {
+api.get('/traces/:traceId/runs', async (c) => {
   const { traceId } = c.req.param();
-  const trace = getTrace(traceId);
+  const trace = await getTrace(traceId);
   if (!trace) return c.json({ error: 'Trace not found' }, 404);
-  return c.json({ runs: listRunsForTrace(traceId) });
+  return c.json({ runs: await listRunsForTrace(traceId) });
 });
 
-api.get('/agents/:namespace/:name/traces', (c) => {
+api.get('/agents/:namespace/:name/traces', async (c) => {
   const { name } = c.req.param();
   const limit = Number(c.req.query('limit') ?? '50');
   const offset = Number(c.req.query('offset') ?? '0');
 
-  const project = getProjectByName(name);
+  const project = await getProjectByName(name);
   if (!project) {
     return c.json({ traces: [], total: 0, hasMore: false });
   }
 
-  return c.json(listTraces({ projectId: project.id, limit, offset }));
+  return c.json(await listTraces({ projectId: project.id, limit, offset }));
 });
 
 // ---------------------------------------------------------------------------
@@ -233,7 +231,7 @@ api.post('/feedback', async (c) => {
       source: body.source ?? 'human',
       createdAt: new Date(),
     };
-    insertFeedback(feedback);
+    await insertFeedback(feedback);
     return c.json(feedback, 201);
   } catch (err) {
     console.error('Failed to create feedback:', err);
@@ -241,19 +239,19 @@ api.post('/feedback', async (c) => {
   }
 });
 
-api.get('/traces/:traceId/feedback', (c) => {
+api.get('/traces/:traceId/feedback', async (c) => {
   const { traceId } = c.req.param();
-  return c.json({ feedback: listFeedbackForTrace(traceId) });
+  return c.json({ feedback: await listFeedbackForTrace(traceId) });
 });
 
-api.get('/runs/:runId/feedback', (c) => {
+api.get('/runs/:runId/feedback', async (c) => {
   const { runId } = c.req.param();
-  return c.json({ feedback: listFeedbackForRun(runId) });
+  return c.json({ feedback: await listFeedbackForRun(runId) });
 });
 
-api.delete('/feedback/:id', (c) => {
+api.delete('/feedback/:id', async (c) => {
   const { id } = c.req.param();
-  const deleted = deleteFeedback(id);
+  const deleted = await deleteFeedback(id);
   if (!deleted) return c.json({ error: 'Feedback not found' }, 404);
   return c.json({ ok: true });
 });
@@ -274,7 +272,7 @@ api.post('/datasets', async (c) => {
       createdAt: now,
       updatedAt: now,
     };
-    insertDataset(dataset);
+    await insertDataset(dataset);
     return c.json(dataset, 201);
   } catch (err) {
     console.error('Failed to create dataset:', err);
@@ -282,29 +280,29 @@ api.post('/datasets', async (c) => {
   }
 });
 
-api.get('/datasets', (c) => {
-  return c.json({ datasets: listDatasets() });
+api.get('/datasets', async (c) => {
+  return c.json({ datasets: await listDatasets() });
 });
 
-api.get('/datasets/:id', (c) => {
+api.get('/datasets/:id', async (c) => {
   const { id } = c.req.param();
-  const dataset = getDataset(id);
+  const dataset = await getDataset(id);
   if (!dataset) return c.json({ error: 'Dataset not found' }, 404);
-  const examples = listExamples(id);
+  const examples = await listExamples(id);
   return c.json({ dataset, exampleCount: examples.length });
 });
 
 api.put('/datasets/:id', async (c) => {
   const { id } = c.req.param();
   const body = await c.req.json();
-  const updated = updateDataset(id, body);
+  const updated = await updateDataset(id, body);
   if (!updated) return c.json({ error: 'Dataset not found' }, 404);
   return c.json({ ok: true });
 });
 
-api.delete('/datasets/:id', (c) => {
+api.delete('/datasets/:id', async (c) => {
   const { id } = c.req.param();
-  const deleted = deleteDataset(id);
+  const deleted = await deleteDataset(id);
   if (!deleted) return c.json({ error: 'Dataset not found' }, 404);
   return c.json({ ok: true });
 });
@@ -315,13 +313,14 @@ api.delete('/datasets/:id', (c) => {
 
 api.post('/datasets/:id/examples', async (c) => {
   const { id } = c.req.param();
-  const dataset = getDataset(id);
+  const dataset = await getDataset(id);
   if (!dataset) return c.json({ error: 'Dataset not found' }, 404);
 
   try {
     const body = await c.req.json();
     const items = Array.isArray(body) ? body : [body];
-    const results = items.map((item) => {
+    const results = [];
+    for (const item of items) {
       const example = {
         id: randomUUID(),
         datasetId: id,
@@ -332,9 +331,9 @@ api.post('/datasets/:id/examples', async (c) => {
         sourceRunId: item.sourceRunId,
         createdAt: new Date(),
       };
-      insertExample(example);
-      return example;
-    });
+      await insertExample(example);
+      results.push(example);
+    }
     return c.json({ examples: results }, 201);
   } catch (err) {
     console.error('Failed to create examples:', err);
@@ -342,23 +341,23 @@ api.post('/datasets/:id/examples', async (c) => {
   }
 });
 
-api.get('/datasets/:id/examples', (c) => {
+api.get('/datasets/:id/examples', async (c) => {
   const { id } = c.req.param();
   const split = c.req.query('split');
-  return c.json({ examples: listExamples(id, split) });
+  return c.json({ examples: await listExamples(id, split) });
 });
 
 api.put('/examples/:id', async (c) => {
   const { id } = c.req.param();
   const body = await c.req.json();
-  const updated = updateExample(id, body);
+  const updated = await updateExample(id, body);
   if (!updated) return c.json({ error: 'Example not found' }, 404);
   return c.json({ ok: true });
 });
 
-api.delete('/examples/:id', (c) => {
+api.delete('/examples/:id', async (c) => {
   const { id } = c.req.param();
-  const deleted = deleteExample(id);
+  const deleted = await deleteExample(id);
   if (!deleted) return c.json({ error: 'Example not found' }, 404);
   return c.json({ ok: true });
 });
@@ -366,7 +365,7 @@ api.delete('/examples/:id', (c) => {
 // Create example from a trace
 api.post('/traces/:traceId/to-example', async (c) => {
   const { traceId } = c.req.param();
-  const trace = getTrace(traceId);
+  const trace = await getTrace(traceId);
   if (!trace) return c.json({ error: 'Trace not found' }, 404);
 
   try {
@@ -381,7 +380,7 @@ api.post('/traces/:traceId/to-example', async (c) => {
       sourceRunId: undefined,
       createdAt: new Date(),
     };
-    insertExample(example);
+    await insertExample(example);
     return c.json(example, 201);
   } catch (err) {
     console.error('Failed to create example from trace:', err);
@@ -411,22 +410,22 @@ api.post('/experiments', async (c) => {
   }
 });
 
-api.get('/experiments', (c) => {
+api.get('/experiments', async (c) => {
   const datasetId = c.req.query('datasetId');
-  return c.json({ experiments: listExperiments(datasetId) });
+  return c.json({ experiments: await listExperiments(datasetId) });
 });
 
-api.get('/experiments/:id', (c) => {
+api.get('/experiments/:id', async (c) => {
   const { id } = c.req.param();
-  const experiment = getExperiment(id);
+  const experiment = await getExperiment(id);
   if (!experiment) return c.json({ error: 'Experiment not found' }, 404);
-  const results = listExperimentResults(id);
+  const results = await listExperimentResults(id);
   return c.json({ experiment, results });
 });
 
-api.delete('/experiments/:id', (c) => {
+api.delete('/experiments/:id', async (c) => {
   const { id } = c.req.param();
-  const deleted = deleteExperiment(id);
+  const deleted = await deleteExperiment(id);
   if (!deleted) return c.json({ error: 'Experiment not found' }, 404);
   return c.json({ ok: true });
 });
@@ -435,27 +434,29 @@ api.delete('/experiments/:id', (c) => {
 // Monitoring endpoints
 // ---------------------------------------------------------------------------
 
-api.get('/monitoring/timeseries', (c) => {
+api.get('/monitoring/timeseries', async (c) => {
   const projectId = c.req.query('projectId');
   const granularity = (c.req.query('granularity') ?? 'hour') as TimeGranularity;
   const buckets = Number(c.req.query('buckets') ?? '24');
-  return c.json({ data: getTimeSeries({ projectId, granularity, buckets }) });
+  return c.json({ data: await getTimeSeries({ projectId, granularity, buckets }) });
 });
 
-api.get('/monitoring/models', (c) => {
+api.get('/monitoring/models', async (c) => {
   const projectId = c.req.query('projectId');
-  return c.json({ data: getModelUsage(projectId) });
+  return c.json({ data: await getModelUsage(projectId) });
 });
 
-api.get('/monitoring/errors', (c) => {
-  return c.json({ data: getErrorRates() });
+api.get('/monitoring/errors', async (c) => {
+  return c.json({ data: await getErrorRates() });
 });
 
-api.get('/monitoring/summary', (c) => {
-  const stats = getProjectStats();
-  const timeseries = getTimeSeries({ granularity: 'hour', buckets: 24 });
-  const models = getModelUsage();
-  const errors = getErrorRates();
+api.get('/monitoring/summary', async (c) => {
+  const [stats, timeseries, models, errors] = await Promise.all([
+    getProjectStats(),
+    getTimeSeries({ granularity: 'hour', buckets: 24 }),
+    getModelUsage(),
+    getErrorRates(),
+  ]);
 
   const totalTraces = stats.reduce((s, p) => s + p.traceCount, 0);
   const totalTokens = stats.reduce((s, p) => s + p.totalTokens, 0);

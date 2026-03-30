@@ -32,45 +32,21 @@ spec:
               value: ""
             - name: NATS_URL
               value: {{ .Values.dashboard.nats.url | default (printf "nats://nats.%s.svc.cluster.local:4222" (include "kube-agents.namespace" .)) | quote }}
-            - name: DATABASE_PATH
-              value: {{ .Values.dashboard.database.path | default "/data/kube-agents.db" | quote }}
-          volumeMounts:
-            - name: data
-              mountPath: /data
+            - name: DATABASE_URL
+              {{- if .Values.dashboard.database.url }}
+              value: {{ .Values.dashboard.database.url | quote }}
+              {{- else }}
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: DATABASE_URL
+              {{- end }}
           resources:
             {{- toYaml .Values.dashboard.resources | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /api/agents
               port: {{ .Values.dashboard.port }}
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 30
-      volumes:
-        - name: data
-          {{- if .Values.dashboard.persistence.enabled }}
-          persistentVolumeClaim:
-            claimName: kube-agents-dashboard-data
-          {{- else }}
-          emptyDir: {}
-          {{- end }}
----
-{{- if .Values.dashboard.persistence.enabled }}
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: kube-agents-dashboard-data
-  namespace: {{ include "kube-agents.namespace" . }}
-  labels:
-    {{- include "kube-agents.labels" . | nindent 4 }}
-    app.kubernetes.io/component: dashboard
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: {{ .Values.dashboard.persistence.size | default "1Gi" }}
-  {{- if .Values.dashboard.persistence.storageClass }}
-  storageClassName: {{ .Values.dashboard.persistence.storageClass }}
-  {{- end }}
-{{- end }}
 {{- end }}

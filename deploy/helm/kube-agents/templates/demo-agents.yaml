@@ -15,8 +15,8 @@ spec:
     model: gpt-5.4
     temperature: 0.3
     maxTokens: 8192
-    apiKeySecret: azure-openai-credentials
-    baseUrl: https://admin-mfp9phmz-eastus2.cognitiveservices.azure.com/openai/v1/
+    apiKeySecret: litellm-credentials
+    baseUrl: https://litellm.aceux.net/v1
   system: |
     You are a coding agent. You write clean, well-tested TypeScript code.
     When given a task, you:
@@ -55,8 +55,8 @@ spec:
     model: gpt-5.4
     temperature: 0.2
     maxTokens: 4096
-    apiKeySecret: azure-openai-credentials
-    baseUrl: https://admin-mfp9phmz-eastus2.cognitiveservices.azure.com/openai/v1/
+    apiKeySecret: litellm-credentials
+    baseUrl: https://litellm.aceux.net/v1
   system: |
     You are a code review agent. You review code changes for:
     - Correctness and potential bugs
@@ -92,8 +92,8 @@ spec:
     model: gpt-5.4
     temperature: 0.5
     maxTokens: 4096
-    apiKeySecret: azure-openai-credentials
-    baseUrl: https://admin-mfp9phmz-eastus2.cognitiveservices.azure.com/openai/v1/
+    apiKeySecret: litellm-credentials
+    baseUrl: https://litellm.aceux.net/v1
   system: |
     You are an orchestrator agent that manages multi-agent workflows.
     When you receive a high-level task:

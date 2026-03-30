@@ -115,11 +115,11 @@ export async function listAgents(namespace: string): Promise<K8sAgent[]> {
   const body = agentResponse as { items?: K8sAgent[] };
   const agents = body.items ?? [];
 
-  // Enrich agents with pod status and SQLite trace metrics
-  return agents.map((agent) => {
+  // Enrich agents with pod status and PostgreSQL trace metrics
+  return Promise.all(agents.map(async (agent) => {
     const pod = podStatuses.get(agent.metadata.name);
     const isReady = pod?.status?.containerStatuses?.every((c) => c.ready) ?? false;
-    const metrics = getAgentMetrics(agent.metadata.name);
+    const metrics = await getAgentMetrics(agent.metadata.name);
 
     return {
       ...agent,
@@ -135,7 +135,7 @@ export async function listAgents(namespace: string): Promise<K8sAgent[]> {
         lastActiveAt: agent.status?.lastActiveAt ?? metrics?.lastTraceAt ?? undefined,
       },
     };
-  });
+  }));
 }
 
 export async function getAgent(namespace: string, name: string): Promise<K8sAgent | null> {
@@ -154,7 +154,7 @@ export async function getAgent(namespace: string, name: string): Promise<K8sAgen
     const agent = agentResponse as K8sAgent;
     const pod = podStatuses.get(agent.metadata.name);
     const isReady = pod?.status?.containerStatuses?.every((c) => c.ready) ?? false;
-    const metrics = getAgentMetrics(agent.metadata.name);
+    const metrics = await getAgentMetrics(agent.metadata.name);
 
     return {
       ...agent,

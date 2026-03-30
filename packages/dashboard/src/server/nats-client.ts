@@ -42,13 +42,13 @@ export function isNatsAvailable(): boolean {
 // Legacy format ingestion — maps old TraceRun/TraceSpan to new Project/Trace/Run
 // ---------------------------------------------------------------------------
 
-function ensureProject(agentName: string): string {
-  const existing = getProjectByName(agentName);
+async function ensureProject(agentName: string): Promise<string> {
+  const existing = await getProjectByName(agentName);
   if (existing) return existing.id;
 
   const id = randomUUID();
   const now = new Date();
-  upsertProject({
+  await upsertProject({
     id,
     name: agentName,
     description: `Auto-created project for agent ${agentName}`,
@@ -59,10 +59,10 @@ function ensureProject(agentName: string): string {
   return id;
 }
 
-function ingestLegacyTraceRun(raw: TraceRun): void {
-  const projectId = ensureProject(raw.agentName);
+async function ingestLegacyTraceRun(raw: TraceRun): Promise<void> {
+  const projectId = await ensureProject(raw.agentName);
 
-  upsertTrace({
+  await upsertTrace({
     id: raw.id,
     projectId,
     name: `email:${raw.emailId.slice(0, 8)}`,
@@ -83,9 +83,9 @@ function ingestLegacyTraceRun(raw: TraceRun): void {
   });
 }
 
-function ingestLegacyTraceSpan(raw: TraceSpan): void {
+async function ingestLegacyTraceSpan(raw: TraceSpan): Promise<void> {
   if (raw.type === 'llm_call' && raw.llm) {
-    insertRun({
+    await insertRun({
       id: raw.id,
       traceId: raw.runId,
       parentRunId: undefined,
@@ -112,7 +112,7 @@ function ingestLegacyTraceSpan(raw: TraceSpan): void {
       toolCalls: raw.llm.toolCalls,
     });
   } else if (raw.type === 'tool_call' && raw.tool) {
-    insertRun({
+    await insertRun({
       id: raw.id,
       traceId: raw.runId,
       parentRunId: undefined,
@@ -170,20 +170,20 @@ export async function initTraceConsumer(): Promise<void> {
           if (subject.startsWith('trace.trace.')) {
             // New Trace format (from updated runtime)
             const trace = raw as Trace;
-            ensureProject(subject.slice('trace.trace.'.length));
-            upsertTrace(trace);
+            await ensureProject(subject.slice('trace.trace.'.length));
+            await upsertTrace(trace);
           } else if (subject.startsWith('trace.run.')) {
             // Disambiguate: new Run has `runType`, legacy TraceRun has `emailId`
             if ('runType' in raw) {
               // New Run format (from updated runtime)
-              insertRun(raw as Run);
+              await insertRun(raw as Run);
             } else {
               // Legacy TraceRun format (from old runtime)
-              ingestLegacyTraceRun(raw as TraceRun);
+              await ingestLegacyTraceRun(raw as TraceRun);
             }
           } else if (subject.startsWith('trace.span.')) {
             // Legacy TraceSpan format (from old runtime)
-            ingestLegacyTraceSpan(raw as TraceSpan);
+            await ingestLegacyTraceSpan(raw as TraceSpan);
           }
         } catch (err) {
           console.error('[nats-client] Failed to process trace event:', err);
@@ -193,7 +193,7 @@ export async function initTraceConsumer(): Promise<void> {
       // consumer ended
     });
 
-    console.log('[nats-client] Trace consumer started (SQLite backend)');
+    console.log('[nats-client] Trace consumer started (PostgreSQL backend)');
   } catch (err) {
     console.warn('[nats-client] Failed to start trace consumer:', err);
   }

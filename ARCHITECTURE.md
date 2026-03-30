@@ -1116,16 +1116,17 @@ Data Model (LangSmith-aligned):
 ```
 Runtime (Tracer)                    NATS JetStream               Dashboard
 ─────────────────                  ────────────────             ─────────────
-startTrace() ──────────────────▶  trace.trace.{agent} ──────▶ SQLite (traces)
-  startRun(llm) ──────────────▶  trace.run.{agent}   ──────▶ SQLite (runs)
-  startRun(tool) ─────────────▶  trace.run.{agent}   ──────▶ SQLite (runs)
-  complete() ─────────────────▶  trace.trace.{agent} ──────▶ SQLite (update)
+startTrace() ──────────────────▶  trace.trace.{agent} ──────▶ PostgreSQL (traces)
+  startRun(llm) ──────────────▶  trace.run.{agent}   ──────▶ PostgreSQL (runs)
+  startRun(tool) ─────────────▶  trace.run.{agent}   ──────▶ PostgreSQL (runs)
+  complete() ─────────────────▶  trace.trace.{agent} ──────▶ PostgreSQL (update)
 ```
 
 #### Storage
 
-- **SQLite** with WAL mode for concurrent reads (replaces in-memory store)
-- Persistent via PVC in Kubernetes (`/data/kube-agents.db`)
+- **PostgreSQL 16** with connection pooling (pg.Pool, max 10 connections)
+- Deployed as StatefulSet with persistent volume in Kubernetes
+- JSONB columns for flexible metadata storage, TIMESTAMPTZ for timestamps
 - Supports Projects, Traces, Runs, Feedback, Datasets, Examples, Experiments
 
 ### 10.2 Evaluation

@@ -48,12 +48,12 @@ export interface ExperimentSummary {
 export async function runExperiment(options: RunExperimentOptions): Promise<ExperimentSummary> {
   const { name, datasetId, description, runFn, evaluators = [], metadata = {}, split } = options;
 
-  const dataset = getDataset(datasetId);
+  const dataset = await getDataset(datasetId);
   if (!dataset) {
     throw new Error(`Dataset not found: ${datasetId}`);
   }
 
-  const examples = listExamples(datasetId, split);
+  const examples = await listExamples(datasetId, split);
   if (examples.length === 0) {
     throw new Error(`Dataset "${dataset.name}" has no examples${split ? ` in split "${split}"` : ''}`);
   }
@@ -69,7 +69,7 @@ export async function runExperiment(options: RunExperimentOptions): Promise<Expe
     createdAt: now,
     completedAt: undefined,
   };
-  insertExperiment(experiment);
+  await insertExperiment(experiment);
 
   const results: ExperimentResult[] = [];
   const allFeedback: Feedback[] = [];
@@ -106,7 +106,7 @@ export async function runExperiment(options: RunExperimentOptions): Promise<Expe
         };
         const feedback = await runEvaluators(evaluators, evalInput);
         for (const fb of feedback) {
-          insertFeedback(fb);
+          await insertFeedback(fb);
           allFeedback.push(fb);
         }
       }
@@ -125,13 +125,13 @@ export async function runExperiment(options: RunExperimentOptions): Promise<Expe
       };
     }
 
-    insertExperimentResult(result);
+    await insertExperimentResult(result);
     results.push(result);
   }
 
   // Mark experiment as completed
   const completedAt = new Date();
-  updateExperiment(experiment.id, {
+  await updateExperiment(experiment.id, {
     status: errorCount === examples.length ? 'error' : 'completed',
     completedAt,
   });

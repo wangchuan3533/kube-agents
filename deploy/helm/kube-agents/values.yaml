@@ -39,6 +39,26 @@ operator:
       cpu: "500m"
       memory: "256Mi"
 
+postgres:
+  enabled: true
+  image:
+    repository: 192.168.1.50:5000/postgres
+    tag: "16-alpine"
+  database: kubeagents
+  user: kubeagents
+  password: kubeagents  # override in production
+  persistence:
+    enabled: true
+    size: "5Gi"
+    storageClassName: "local-path"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
 dashboard:
   enabled: true
   image:
@@ -53,19 +73,15 @@ dashboard:
   nats:
     url: ""  # auto-detected from NATS service if empty
   database:
-    path: "/data/kube-agents.db"
-  persistence:
-    enabled: true
-    size: "1Gi"
-    storageClass: ""  # use default storage class
+    url: ""  # auto-constructed from postgres service if empty
   resources:
     requests:
-      cpu: "50m"
-      memory: "64Mi"
-    limits:
-      cpu: "200m"
+      cpu: "100m"
       memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
 
 demoAgents:
-  enabled: true
+  enabled: false
   domain: agents.mycompany.com

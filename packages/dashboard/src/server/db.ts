@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import pg from 'pg';
 import type {
   Project,
   Trace,
@@ -10,61 +10,66 @@ import type {
   ExperimentResult,
 } from '@kube-agents/core';
 
+const { Pool } = pg;
+
 // ---------------------------------------------------------------------------
 // Database initialization
 // ---------------------------------------------------------------------------
 
-const DB_PATH = process.env['DATABASE_PATH'] ?? './data/kube-agents.db';
+const DATABASE_URL = process.env['DATABASE_URL'] ?? 'postgresql://kubeagents:kubeagents@localhost:5432/kubeagents';
 
-let db: Database.Database;
+let pool: pg.Pool;
 
-export function getDb(): Database.Database {
-  if (!db) {
-    db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
-    db.pragma('foreign_keys = ON');
-    migrate(db);
+export function getPool(): pg.Pool {
+  if (!pool) {
+    pool = new Pool({ connectionString: DATABASE_URL, max: 10 });
   }
-  return db;
+  return pool;
 }
 
-export function closeDb(): void {
-  db?.close();
+export async function initDb(): Promise<void> {
+  const p = getPool();
+  await migrate(p);
+  console.log('[db] PostgreSQL database initialized');
+}
+
+export async function closeDb(): Promise<void> {
+  await pool?.end();
 }
 
 // ---------------------------------------------------------------------------
 // Schema migration
 // ---------------------------------------------------------------------------
 
-function migrate(db: Database.Database): void {
-  db.exec(`
+async function migrate(pool: pg.Pool): Promise<void> {
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS projects (
-      id TEXT PRIMARY KEY,
+      id UUID PRIMARY KEY,
       name TEXT NOT NULL UNIQUE,
       description TEXT,
-      metadata TEXT NOT NULL DEFAULT '{}',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS traces (
-      id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL REFERENCES projects(id),
+      id UUID PRIMARY KEY,
+      project_id UUID NOT NULL REFERENCES projects(id),
       name TEXT NOT NULL,
       session_id TEXT,
       status TEXT NOT NULL DEFAULT 'running',
-      inputs TEXT,
-      outputs TEXT,
+      inputs JSONB,
+      outputs JSONB,
       error TEXT,
-      metadata TEXT NOT NULL DEFAULT '{}',
-      tags TEXT NOT NULL DEFAULT '[]',
-      started_at TEXT NOT NULL,
-      completed_at TEXT,
-      total_latency_ms REAL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+      started_at TIMESTAMPTZ NOT NULL,
+      completed_at TIMESTAMPTZ,
+      total_latency_ms DOUBLE PRECISION,
       total_tokens INTEGER DEFAULT 0,
       prompt_tokens INTEGER DEFAULT 0,
       completion_tokens INTEGER DEFAULT 0,
-      cost REAL
+      cost DOUBLE PRECISION
     );
     CREATE INDEX IF NOT EXISTS idx_traces_project ON traces(project_id);
     CREATE INDEX IF NOT EXISTS idx_traces_session ON traces(session_id);
@@ -72,30 +77,30 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_traces_started ON traces(started_at DESC);
 
     CREATE TABLE IF NOT EXISTS runs (
-      id TEXT PRIMARY KEY,
-      trace_id TEXT NOT NULL REFERENCES traces(id),
-      parent_run_id TEXT REFERENCES runs(id),
+      id UUID PRIMARY KEY,
+      trace_id UUID NOT NULL REFERENCES traces(id),
+      parent_run_id UUID REFERENCES runs(id),
       name TEXT NOT NULL,
       run_type TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'running',
-      inputs TEXT,
-      outputs TEXT,
+      inputs JSONB,
+      outputs JSONB,
       error TEXT,
-      metadata TEXT NOT NULL DEFAULT '{}',
-      tags TEXT NOT NULL DEFAULT '[]',
-      started_at TEXT NOT NULL,
-      completed_at TEXT,
-      latency_ms REAL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+      started_at TIMESTAMPTZ NOT NULL,
+      completed_at TIMESTAMPTZ,
+      latency_ms DOUBLE PRECISION,
       prompt_tokens INTEGER,
       completion_tokens INTEGER,
       total_tokens INTEGER,
       model TEXT,
       provider TEXT,
-      temperature REAL,
-      prompt_messages TEXT,
+      temperature DOUBLE PRECISION,
+      prompt_messages JSONB,
       completion TEXT,
       finish_reason TEXT,
-      tool_calls TEXT NOT NULL DEFAULT '[]'
+      tool_calls JSONB NOT NULL DEFAULT '[]'::jsonb
     );
     CREATE INDEX IF NOT EXISTS idx_runs_trace ON runs(trace_id);
     CREATE INDEX IF NOT EXISTS idx_runs_parent ON runs(parent_run_id);
@@ -103,141 +108,107 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at DESC);
 
     CREATE TABLE IF NOT EXISTS feedback (
-      id TEXT PRIMARY KEY,
-      run_id TEXT REFERENCES runs(id),
-      trace_id TEXT NOT NULL REFERENCES traces(id),
+      id UUID PRIMARY KEY,
+      run_id UUID REFERENCES runs(id),
+      trace_id UUID NOT NULL REFERENCES traces(id),
       key TEXT NOT NULL,
-      score REAL,
+      score DOUBLE PRECISION,
       value TEXT,
       comment TEXT,
       source TEXT NOT NULL,
-      created_at TEXT NOT NULL
+      created_at TIMESTAMPTZ NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_feedback_trace ON feedback(trace_id);
     CREATE INDEX IF NOT EXISTS idx_feedback_run ON feedback(run_id);
     CREATE INDEX IF NOT EXISTS idx_feedback_key ON feedback(key);
 
     CREATE TABLE IF NOT EXISTS datasets (
-      id TEXT PRIMARY KEY,
+      id UUID PRIMARY KEY,
       name TEXT NOT NULL UNIQUE,
       description TEXT,
-      metadata TEXT NOT NULL DEFAULT '{}',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS examples (
-      id TEXT PRIMARY KEY,
-      dataset_id TEXT NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
-      inputs TEXT NOT NULL,
-      expected_outputs TEXT,
-      metadata TEXT NOT NULL DEFAULT '{}',
+      id UUID PRIMARY KEY,
+      dataset_id UUID NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
+      inputs JSONB NOT NULL,
+      expected_outputs JSONB,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       split TEXT,
-      source_run_id TEXT,
-      created_at TEXT NOT NULL
+      source_run_id UUID,
+      created_at TIMESTAMPTZ NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_examples_dataset ON examples(dataset_id);
 
     CREATE TABLE IF NOT EXISTS experiments (
-      id TEXT PRIMARY KEY,
+      id UUID PRIMARY KEY,
       name TEXT NOT NULL,
-      dataset_id TEXT NOT NULL REFERENCES datasets(id),
+      dataset_id UUID NOT NULL REFERENCES datasets(id),
       description TEXT,
-      metadata TEXT NOT NULL DEFAULT '{}',
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       status TEXT NOT NULL DEFAULT 'running',
-      created_at TEXT NOT NULL,
-      completed_at TEXT
+      created_at TIMESTAMPTZ NOT NULL,
+      completed_at TIMESTAMPTZ
     );
     CREATE INDEX IF NOT EXISTS idx_experiments_dataset ON experiments(dataset_id);
 
     CREATE TABLE IF NOT EXISTS experiment_results (
-      id TEXT PRIMARY KEY,
-      experiment_id TEXT NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
-      example_id TEXT NOT NULL REFERENCES examples(id),
-      trace_id TEXT REFERENCES traces(id),
-      outputs TEXT,
-      latency_ms REAL,
+      id UUID PRIMARY KEY,
+      experiment_id UUID NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
+      example_id UUID NOT NULL REFERENCES examples(id),
+      trace_id UUID REFERENCES traces(id),
+      outputs JSONB,
+      latency_ms DOUBLE PRECISION,
       total_tokens INTEGER,
       error TEXT,
-      created_at TEXT NOT NULL
+      created_at TIMESTAMPTZ NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_results_experiment ON experiment_results(experiment_id);
   `);
-
-  console.log('[db] SQLite database initialized at', DB_PATH);
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function toISOString(d: Date | string): string {
-  return d instanceof Date ? d.toISOString() : d;
-}
-
-function parseJson<T>(raw: string | null | undefined, fallback: T): T {
-  if (!raw) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
 }
 
 // ---------------------------------------------------------------------------
 // Projects
 // ---------------------------------------------------------------------------
 
-export function upsertProject(project: Project): void {
-  const d = getDb();
-  d.prepare(`
-    INSERT INTO projects (id, name, description, metadata, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(name) DO UPDATE SET
-      description = COALESCE(excluded.description, description),
-      metadata = excluded.metadata,
-      updated_at = excluded.updated_at
-  `).run(
-    project.id,
-    project.name,
-    project.description ?? null,
-    JSON.stringify(project.metadata),
-    toISOString(project.createdAt),
-    toISOString(project.updatedAt),
+export async function upsertProject(project: Project): Promise<void> {
+  await getPool().query(
+    `INSERT INTO projects (id, name, description, metadata, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT(name) DO UPDATE SET
+       description = COALESCE(excluded.description, projects.description),
+       metadata = excluded.metadata,
+       updated_at = excluded.updated_at`,
+    [project.id, project.name, project.description ?? null,
+     project.metadata, project.createdAt, project.updatedAt],
   );
 }
 
-export function getProjectByName(name: string): Project | undefined {
-  const row = getDb()
-    .prepare('SELECT * FROM projects WHERE name = ?')
-    .get(name) as ProjectRow | undefined;
-  return row ? mapProject(row) : undefined;
+export async function getProjectByName(name: string): Promise<Project | undefined> {
+  const { rows } = await getPool().query(
+    'SELECT * FROM projects WHERE name = $1', [name],
+  );
+  return rows[0] ? mapProject(rows[0]) : undefined;
 }
 
-export function listProjects(): Project[] {
-  const rows = getDb()
-    .prepare('SELECT * FROM projects ORDER BY updated_at DESC')
-    .all() as ProjectRow[];
+export async function listProjects(): Promise<Project[]> {
+  const { rows } = await getPool().query(
+    'SELECT * FROM projects ORDER BY updated_at DESC',
+  );
   return rows.map(mapProject);
 }
 
-interface ProjectRow {
-  id: string;
-  name: string;
-  description: string | null;
-  metadata: string;
-  created_at: string;
-  updated_at: string;
-}
-
-function mapProject(row: ProjectRow): Project {
+function mapProject(row: Record<string, unknown>): Project {
   return {
-    id: row.id,
-    name: row.name,
-    description: row.description ?? undefined,
-    metadata: parseJson(row.metadata, {}),
-    createdAt: new Date(row.created_at),
-    updatedAt: new Date(row.updated_at),
+    id: row.id as string,
+    name: row.name as string,
+    description: (row.description as string) ?? undefined,
+    metadata: (row.metadata as Record<string, string>) ?? {},
+    createdAt: new Date(row.created_at as string),
+    updatedAt: new Date(row.updated_at as string),
   };
 }
 
@@ -245,43 +216,30 @@ function mapProject(row: ProjectRow): Project {
 // Traces
 // ---------------------------------------------------------------------------
 
-export function upsertTrace(trace: Trace): void {
-  const d = getDb();
-  d.prepare(`
-    INSERT INTO traces (id, project_id, name, session_id, status, inputs, outputs, error,
-      metadata, tags, started_at, completed_at, total_latency_ms,
-      total_tokens, prompt_tokens, completion_tokens, cost)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      status = excluded.status,
-      outputs = COALESCE(excluded.outputs, outputs),
-      error = excluded.error,
-      metadata = excluded.metadata,
-      tags = excluded.tags,
-      completed_at = excluded.completed_at,
-      total_latency_ms = excluded.total_latency_ms,
-      total_tokens = excluded.total_tokens,
-      prompt_tokens = excluded.prompt_tokens,
-      completion_tokens = excluded.completion_tokens,
-      cost = excluded.cost
-  `).run(
-    trace.id,
-    trace.projectId,
-    trace.name,
-    trace.sessionId ?? null,
-    trace.status,
-    trace.inputs ? JSON.stringify(trace.inputs) : null,
-    trace.outputs ? JSON.stringify(trace.outputs) : null,
-    trace.error ?? null,
-    JSON.stringify(trace.metadata),
-    JSON.stringify(trace.tags),
-    toISOString(trace.startedAt),
-    trace.completedAt ? toISOString(trace.completedAt) : null,
-    trace.totalLatencyMs ?? null,
-    trace.totalTokens,
-    trace.promptTokens,
-    trace.completionTokens,
-    trace.cost ?? null,
+export async function upsertTrace(trace: Trace): Promise<void> {
+  await getPool().query(
+    `INSERT INTO traces (id, project_id, name, session_id, status, inputs, outputs, error,
+       metadata, tags, started_at, completed_at, total_latency_ms,
+       total_tokens, prompt_tokens, completion_tokens, cost)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+     ON CONFLICT(id) DO UPDATE SET
+       status = excluded.status,
+       outputs = COALESCE(excluded.outputs, traces.outputs),
+       error = excluded.error,
+       metadata = excluded.metadata,
+       tags = excluded.tags,
+       completed_at = excluded.completed_at,
+       total_latency_ms = excluded.total_latency_ms,
+       total_tokens = excluded.total_tokens,
+       prompt_tokens = excluded.prompt_tokens,
+       completion_tokens = excluded.completion_tokens,
+       cost = excluded.cost`,
+    [trace.id, trace.projectId, trace.name, trace.sessionId ?? null,
+     trace.status, trace.inputs ?? null, trace.outputs ?? null,
+     trace.error ?? null, trace.metadata, JSON.stringify(trace.tags ?? []),
+     trace.startedAt, trace.completedAt ?? null,
+     trace.totalLatencyMs ?? null, trace.totalTokens,
+     trace.promptTokens, trace.completionTokens, trace.cost ?? null],
   );
 }
 
@@ -300,39 +258,42 @@ export interface TraceListResult {
   hasMore: boolean;
 }
 
-export function listTraces(options: TraceListOptions = {}): TraceListResult {
+export async function listTraces(options: TraceListOptions = {}): Promise<TraceListResult> {
   const { projectId, sessionId, status, name, limit = 50, offset = 0 } = options;
-  const d = getDb();
+  const p = getPool();
 
   const conditions: string[] = [];
   const params: unknown[] = [];
+  let idx = 1;
 
   if (projectId) {
-    conditions.push('project_id = ?');
+    conditions.push(`project_id = $${idx++}`);
     params.push(projectId);
   }
   if (sessionId) {
-    conditions.push('session_id = ?');
+    conditions.push(`session_id = $${idx++}`);
     params.push(sessionId);
   }
   if (status) {
-    conditions.push('status = ?');
+    conditions.push(`status = $${idx++}`);
     params.push(status);
   }
   if (name) {
-    conditions.push('name LIKE ?');
+    conditions.push(`name LIKE $${idx++}`);
     params.push(`%${name}%`);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  const total = (
-    d.prepare(`SELECT COUNT(*) as count FROM traces ${where}`).get(...params) as { count: number }
-  ).count;
+  const countResult = await p.query(
+    `SELECT COUNT(*)::int as count FROM traces ${where}`, params,
+  );
+  const total = countResult.rows[0].count as number;
 
-  const rows = d
-    .prepare(`SELECT * FROM traces ${where} ORDER BY started_at DESC LIMIT ? OFFSET ?`)
-    .all(...params, limit, offset) as TraceRow[];
+  const { rows } = await p.query(
+    `SELECT * FROM traces ${where} ORDER BY started_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
+    [...params, limit, offset],
+  );
 
   return {
     traces: rows.map(mapTrace),
@@ -341,52 +302,32 @@ export function listTraces(options: TraceListOptions = {}): TraceListResult {
   };
 }
 
-export function getTrace(traceId: string): Trace | undefined {
-  const row = getDb()
-    .prepare('SELECT * FROM traces WHERE id = ?')
-    .get(traceId) as TraceRow | undefined;
-  return row ? mapTrace(row) : undefined;
+export async function getTrace(traceId: string): Promise<Trace | undefined> {
+  const { rows } = await getPool().query(
+    'SELECT * FROM traces WHERE id = $1', [traceId],
+  );
+  return rows[0] ? mapTrace(rows[0]) : undefined;
 }
 
-interface TraceRow {
-  id: string;
-  project_id: string;
-  name: string;
-  session_id: string | null;
-  status: string;
-  inputs: string | null;
-  outputs: string | null;
-  error: string | null;
-  metadata: string;
-  tags: string;
-  started_at: string;
-  completed_at: string | null;
-  total_latency_ms: number | null;
-  total_tokens: number;
-  prompt_tokens: number;
-  completion_tokens: number;
-  cost: number | null;
-}
-
-function mapTrace(row: TraceRow): Trace {
+function mapTrace(row: Record<string, unknown>): Trace {
   return {
-    id: row.id,
-    projectId: row.project_id,
-    name: row.name,
-    sessionId: row.session_id ?? undefined,
+    id: row.id as string,
+    projectId: row.project_id as string,
+    name: row.name as string,
+    sessionId: (row.session_id as string) ?? undefined,
     status: row.status as Trace['status'],
-    inputs: parseJson(row.inputs, undefined),
-    outputs: parseJson(row.outputs, undefined),
-    error: row.error ?? undefined,
-    metadata: parseJson(row.metadata, {}),
-    tags: parseJson(row.tags, []),
-    startedAt: new Date(row.started_at),
-    completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
-    totalLatencyMs: row.total_latency_ms ?? undefined,
-    totalTokens: row.total_tokens,
-    promptTokens: row.prompt_tokens,
-    completionTokens: row.completion_tokens,
-    cost: row.cost ?? undefined,
+    inputs: (row.inputs as Record<string, unknown>) ?? undefined,
+    outputs: (row.outputs as Record<string, unknown>) ?? undefined,
+    error: (row.error as string) ?? undefined,
+    metadata: (row.metadata as Record<string, string>) ?? {},
+    tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
+    startedAt: new Date(row.started_at as string),
+    completedAt: row.completed_at ? new Date(row.completed_at as string) : undefined,
+    totalLatencyMs: (row.total_latency_ms as number) ?? undefined,
+    totalTokens: (row.total_tokens as number) ?? 0,
+    promptTokens: (row.prompt_tokens as number) ?? 0,
+    completionTokens: (row.completion_tokens as number) ?? 0,
+    cost: (row.cost as number) ?? undefined,
   };
 }
 
@@ -394,114 +335,71 @@ function mapTrace(row: TraceRow): Trace {
 // Runs
 // ---------------------------------------------------------------------------
 
-export function insertRun(run: Run): void {
-  getDb().prepare(`
-    INSERT INTO runs (id, trace_id, parent_run_id, name, run_type, status,
-      inputs, outputs, error, metadata, tags, started_at, completed_at, latency_ms,
-      prompt_tokens, completion_tokens, total_tokens, model, provider, temperature,
-      prompt_messages, completion, finish_reason, tool_calls)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      status = excluded.status,
-      outputs = COALESCE(excluded.outputs, outputs),
-      error = excluded.error,
-      completed_at = excluded.completed_at,
-      latency_ms = excluded.latency_ms
-  `).run(
-    run.id,
-    run.traceId,
-    run.parentRunId ?? null,
-    run.name,
-    run.runType,
-    run.status,
-    run.inputs ? JSON.stringify(run.inputs) : null,
-    run.outputs ? JSON.stringify(run.outputs) : null,
-    run.error ?? null,
-    JSON.stringify(run.metadata),
-    JSON.stringify(run.tags),
-    toISOString(run.startedAt),
-    run.completedAt ? toISOString(run.completedAt) : null,
-    run.latencyMs ?? null,
-    run.promptTokens ?? null,
-    run.completionTokens ?? null,
-    run.totalTokens ?? null,
-    run.model ?? null,
-    run.provider ?? null,
-    run.temperature ?? null,
-    run.promptMessages ? JSON.stringify(run.promptMessages) : null,
-    run.completion ?? null,
-    run.finishReason ?? null,
-    JSON.stringify(run.toolCalls),
+export async function insertRun(run: Run): Promise<void> {
+  await getPool().query(
+    `INSERT INTO runs (id, trace_id, parent_run_id, name, run_type, status,
+       inputs, outputs, error, metadata, tags, started_at, completed_at, latency_ms,
+       prompt_tokens, completion_tokens, total_tokens, model, provider, temperature,
+       prompt_messages, completion, finish_reason, tool_calls)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+             $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+     ON CONFLICT(id) DO UPDATE SET
+       status = excluded.status,
+       outputs = COALESCE(excluded.outputs, runs.outputs),
+       error = excluded.error,
+       completed_at = excluded.completed_at,
+       latency_ms = excluded.latency_ms`,
+    [run.id, run.traceId, run.parentRunId ?? null, run.name, run.runType,
+     run.status, run.inputs ?? null, run.outputs ?? null,
+     run.error ?? null, run.metadata, JSON.stringify(run.tags ?? []),
+     run.startedAt, run.completedAt ?? null, run.latencyMs ?? null,
+     run.promptTokens ?? null, run.completionTokens ?? null,
+     run.totalTokens ?? null, run.model ?? null, run.provider ?? null,
+     run.temperature ?? null, run.promptMessages ?? null,
+     run.completion ?? null, run.finishReason ?? null, run.toolCalls],
   );
 }
 
-export function listRunsForTrace(traceId: string): Run[] {
-  const rows = getDb()
-    .prepare('SELECT * FROM runs WHERE trace_id = ? ORDER BY started_at ASC')
-    .all(traceId) as RunRow[];
+export async function listRunsForTrace(traceId: string): Promise<Run[]> {
+  const { rows } = await getPool().query(
+    'SELECT * FROM runs WHERE trace_id = $1 ORDER BY started_at ASC', [traceId],
+  );
   return rows.map(mapRun);
 }
 
-export function getRun(runId: string): Run | undefined {
-  const row = getDb()
-    .prepare('SELECT * FROM runs WHERE id = ?')
-    .get(runId) as RunRow | undefined;
-  return row ? mapRun(row) : undefined;
+export async function getRun(runId: string): Promise<Run | undefined> {
+  const { rows } = await getPool().query(
+    'SELECT * FROM runs WHERE id = $1', [runId],
+  );
+  return rows[0] ? mapRun(rows[0]) : undefined;
 }
 
-interface RunRow {
-  id: string;
-  trace_id: string;
-  parent_run_id: string | null;
-  name: string;
-  run_type: string;
-  status: string;
-  inputs: string | null;
-  outputs: string | null;
-  error: string | null;
-  metadata: string;
-  tags: string;
-  started_at: string;
-  completed_at: string | null;
-  latency_ms: number | null;
-  prompt_tokens: number | null;
-  completion_tokens: number | null;
-  total_tokens: number | null;
-  model: string | null;
-  provider: string | null;
-  temperature: number | null;
-  prompt_messages: string | null;
-  completion: string | null;
-  finish_reason: string | null;
-  tool_calls: string;
-}
-
-function mapRun(row: RunRow): Run {
+function mapRun(row: Record<string, unknown>): Run {
   return {
-    id: row.id,
-    traceId: row.trace_id,
-    parentRunId: row.parent_run_id ?? undefined,
-    name: row.name,
+    id: row.id as string,
+    traceId: row.trace_id as string,
+    parentRunId: (row.parent_run_id as string) ?? undefined,
+    name: row.name as string,
     runType: row.run_type as Run['runType'],
     status: row.status as Run['status'],
-    inputs: parseJson(row.inputs, undefined),
-    outputs: parseJson(row.outputs, undefined),
-    error: row.error ?? undefined,
-    metadata: parseJson(row.metadata, {}),
-    tags: parseJson(row.tags, []),
-    startedAt: new Date(row.started_at),
-    completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
-    latencyMs: row.latency_ms ?? undefined,
-    promptTokens: row.prompt_tokens ?? undefined,
-    completionTokens: row.completion_tokens ?? undefined,
-    totalTokens: row.total_tokens ?? undefined,
-    model: row.model ?? undefined,
-    provider: row.provider ?? undefined,
-    temperature: row.temperature ?? undefined,
-    promptMessages: parseJson(row.prompt_messages, undefined),
-    completion: row.completion ?? undefined,
-    finishReason: row.finish_reason ?? undefined,
-    toolCalls: parseJson(row.tool_calls, []),
+    inputs: (row.inputs as Record<string, unknown>) ?? undefined,
+    outputs: (row.outputs as Record<string, unknown>) ?? undefined,
+    error: (row.error as string) ?? undefined,
+    metadata: (row.metadata as Record<string, string>) ?? {},
+    tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
+    startedAt: new Date(row.started_at as string),
+    completedAt: row.completed_at ? new Date(row.completed_at as string) : undefined,
+    latencyMs: (row.latency_ms as number) ?? undefined,
+    promptTokens: (row.prompt_tokens as number) ?? undefined,
+    completionTokens: (row.completion_tokens as number) ?? undefined,
+    totalTokens: (row.total_tokens as number) ?? undefined,
+    model: (row.model as string) ?? undefined,
+    provider: (row.provider as string) ?? undefined,
+    temperature: (row.temperature as number) ?? undefined,
+    promptMessages: (row.prompt_messages as Run['promptMessages']) ?? undefined,
+    completion: (row.completion as string) ?? undefined,
+    finishReason: (row.finish_reason as string) ?? undefined,
+    toolCalls: (row.tool_calls as Run['toolCalls']) ?? [],
   };
 }
 
@@ -509,65 +407,46 @@ function mapRun(row: RunRow): Run {
 // Feedback
 // ---------------------------------------------------------------------------
 
-export function insertFeedback(feedback: Feedback): void {
-  getDb().prepare(`
-    INSERT INTO feedback (id, run_id, trace_id, key, score, value, comment, source, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    feedback.id,
-    feedback.runId ?? null,
-    feedback.traceId,
-    feedback.key,
-    feedback.score ?? null,
-    feedback.value ?? null,
-    feedback.comment ?? null,
-    feedback.source,
-    toISOString(feedback.createdAt),
+export async function insertFeedback(feedback: Feedback): Promise<void> {
+  await getPool().query(
+    `INSERT INTO feedback (id, run_id, trace_id, key, score, value, comment, source, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [feedback.id, feedback.runId ?? null, feedback.traceId, feedback.key,
+     feedback.score ?? null, feedback.value ?? null, feedback.comment ?? null,
+     feedback.source, feedback.createdAt],
   );
 }
 
-export function listFeedbackForTrace(traceId: string): Feedback[] {
-  const rows = getDb()
-    .prepare('SELECT * FROM feedback WHERE trace_id = ? ORDER BY created_at DESC')
-    .all(traceId) as FeedbackRow[];
+export async function listFeedbackForTrace(traceId: string): Promise<Feedback[]> {
+  const { rows } = await getPool().query(
+    'SELECT * FROM feedback WHERE trace_id = $1 ORDER BY created_at DESC', [traceId],
+  );
   return rows.map(mapFeedback);
 }
 
-export function listFeedbackForRun(runId: string): Feedback[] {
-  const rows = getDb()
-    .prepare('SELECT * FROM feedback WHERE run_id = ? ORDER BY created_at DESC')
-    .all(runId) as FeedbackRow[];
+export async function listFeedbackForRun(runId: string): Promise<Feedback[]> {
+  const { rows } = await getPool().query(
+    'SELECT * FROM feedback WHERE run_id = $1 ORDER BY created_at DESC', [runId],
+  );
   return rows.map(mapFeedback);
 }
 
-export function deleteFeedback(id: string): boolean {
-  const result = getDb().prepare('DELETE FROM feedback WHERE id = ?').run(id);
-  return result.changes > 0;
+export async function deleteFeedback(id: string): Promise<boolean> {
+  const result = await getPool().query('DELETE FROM feedback WHERE id = $1', [id]);
+  return (result.rowCount ?? 0) > 0;
 }
 
-interface FeedbackRow {
-  id: string;
-  run_id: string | null;
-  trace_id: string;
-  key: string;
-  score: number | null;
-  value: string | null;
-  comment: string | null;
-  source: string;
-  created_at: string;
-}
-
-function mapFeedback(row: FeedbackRow): Feedback {
+function mapFeedback(row: Record<string, unknown>): Feedback {
   return {
-    id: row.id,
-    runId: row.run_id ?? undefined,
-    traceId: row.trace_id,
-    key: row.key,
-    score: row.score ?? undefined,
-    value: row.value ?? undefined,
-    comment: row.comment ?? undefined,
+    id: row.id as string,
+    runId: (row.run_id as string) ?? undefined,
+    traceId: row.trace_id as string,
+    key: row.key as string,
+    score: (row.score as number) ?? undefined,
+    value: (row.value as string) ?? undefined,
+    comment: (row.comment as string) ?? undefined,
     source: row.source as Feedback['source'],
-    createdAt: new Date(row.created_at),
+    createdAt: new Date(row.created_at as string),
   };
 }
 
@@ -575,80 +454,70 @@ function mapFeedback(row: FeedbackRow): Feedback {
 // Datasets
 // ---------------------------------------------------------------------------
 
-export function insertDataset(dataset: Dataset): void {
-  getDb().prepare(`
-    INSERT INTO datasets (id, name, description, metadata, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(
-    dataset.id,
-    dataset.name,
-    dataset.description ?? null,
-    JSON.stringify(dataset.metadata),
-    toISOString(dataset.createdAt),
-    toISOString(dataset.updatedAt),
+export async function insertDataset(dataset: Dataset): Promise<void> {
+  await getPool().query(
+    `INSERT INTO datasets (id, name, description, metadata, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [dataset.id, dataset.name, dataset.description ?? null,
+     dataset.metadata, dataset.createdAt, dataset.updatedAt],
   );
 }
 
-export function updateDataset(id: string, updates: { name?: string; description?: string; metadata?: Record<string, string> }): boolean {
-  const sets: string[] = ['updated_at = ?'];
-  const params: unknown[] = [new Date().toISOString()];
+export async function updateDataset(
+  id: string,
+  updates: { name?: string; description?: string; metadata?: Record<string, string> },
+): Promise<boolean> {
+  const sets: string[] = ['updated_at = $1'];
+  const params: unknown[] = [new Date()];
+  let idx = 2;
 
   if (updates.name !== undefined) {
-    sets.push('name = ?');
+    sets.push(`name = $${idx++}`);
     params.push(updates.name);
   }
   if (updates.description !== undefined) {
-    sets.push('description = ?');
+    sets.push(`description = $${idx++}`);
     params.push(updates.description);
   }
   if (updates.metadata !== undefined) {
-    sets.push('metadata = ?');
-    params.push(JSON.stringify(updates.metadata));
+    sets.push(`metadata = $${idx++}`);
+    params.push(updates.metadata);
   }
 
   params.push(id);
-  const result = getDb()
-    .prepare(`UPDATE datasets SET ${sets.join(', ')} WHERE id = ?`)
-    .run(...params);
-  return result.changes > 0;
+  const result = await getPool().query(
+    `UPDATE datasets SET ${sets.join(', ')} WHERE id = $${idx}`, params,
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
-export function getDataset(id: string): Dataset | undefined {
-  const row = getDb()
-    .prepare('SELECT * FROM datasets WHERE id = ?')
-    .get(id) as DatasetRow | undefined;
-  return row ? mapDataset(row) : undefined;
+export async function getDataset(id: string): Promise<Dataset | undefined> {
+  const { rows } = await getPool().query(
+    'SELECT * FROM datasets WHERE id = $1', [id],
+  );
+  return rows[0] ? mapDataset(rows[0]) : undefined;
 }
 
-export function listDatasets(): Dataset[] {
-  const rows = getDb()
-    .prepare('SELECT * FROM datasets ORDER BY updated_at DESC')
-    .all() as DatasetRow[];
+export async function listDatasets(): Promise<Dataset[]> {
+  const { rows } = await getPool().query(
+    'SELECT * FROM datasets ORDER BY updated_at DESC',
+  );
   return rows.map(mapDataset);
 }
 
-export function deleteDataset(id: string): boolean {
-  const result = getDb().prepare('DELETE FROM datasets WHERE id = ?').run(id);
-  return result.changes > 0;
+export async function deleteDataset(id: string): Promise<boolean> {
+  const result = await getPool().query('DELETE FROM datasets WHERE id = $1', [id]);
+  return (result.rowCount ?? 0) > 0;
 }
 
-interface DatasetRow {
-  id: string;
-  name: string;
-  description: string | null;
-  metadata: string;
-  created_at: string;
-  updated_at: string;
-}
-
-function mapDataset(row: DatasetRow): Dataset {
+function mapDataset(row: Record<string, unknown>): Dataset {
   return {
-    id: row.id,
-    name: row.name,
-    description: row.description ?? undefined,
-    metadata: parseJson(row.metadata, {}),
-    createdAt: new Date(row.created_at),
-    updatedAt: new Date(row.updated_at),
+    id: row.id as string,
+    name: row.name as string,
+    description: (row.description as string) ?? undefined,
+    metadata: (row.metadata as Record<string, string>) ?? {},
+    createdAt: new Date(row.created_at as string),
+    updatedAt: new Date(row.updated_at as string),
   };
 }
 
@@ -656,97 +525,85 @@ function mapDataset(row: DatasetRow): Dataset {
 // Examples
 // ---------------------------------------------------------------------------
 
-export function insertExample(example: Example): void {
-  getDb().prepare(`
-    INSERT INTO examples (id, dataset_id, inputs, expected_outputs, metadata, split, source_run_id, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    example.id,
-    example.datasetId,
-    JSON.stringify(example.inputs),
-    example.expectedOutputs ? JSON.stringify(example.expectedOutputs) : null,
-    JSON.stringify(example.metadata),
-    example.split ?? null,
-    example.sourceRunId ?? null,
-    toISOString(example.createdAt),
+export async function insertExample(example: Example): Promise<void> {
+  await getPool().query(
+    `INSERT INTO examples (id, dataset_id, inputs, expected_outputs, metadata, split, source_run_id, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [example.id, example.datasetId, example.inputs,
+     example.expectedOutputs ?? null, example.metadata,
+     example.split ?? null, example.sourceRunId ?? null, example.createdAt],
   );
 }
 
-export function listExamples(datasetId: string, split?: string): Example[] {
+export async function listExamples(datasetId: string, split?: string): Promise<Example[]> {
   if (split) {
-    const rows = getDb()
-      .prepare('SELECT * FROM examples WHERE dataset_id = ? AND split = ? ORDER BY created_at DESC')
-      .all(datasetId, split) as ExampleRow[];
+    const { rows } = await getPool().query(
+      'SELECT * FROM examples WHERE dataset_id = $1 AND split = $2 ORDER BY created_at DESC',
+      [datasetId, split],
+    );
     return rows.map(mapExample);
   }
-  const rows = getDb()
-    .prepare('SELECT * FROM examples WHERE dataset_id = ? ORDER BY created_at DESC')
-    .all(datasetId) as ExampleRow[];
+  const { rows } = await getPool().query(
+    'SELECT * FROM examples WHERE dataset_id = $1 ORDER BY created_at DESC', [datasetId],
+  );
   return rows.map(mapExample);
 }
 
-export function getExample(id: string): Example | undefined {
-  const row = getDb()
-    .prepare('SELECT * FROM examples WHERE id = ?')
-    .get(id) as ExampleRow | undefined;
-  return row ? mapExample(row) : undefined;
+export async function getExample(id: string): Promise<Example | undefined> {
+  const { rows } = await getPool().query(
+    'SELECT * FROM examples WHERE id = $1', [id],
+  );
+  return rows[0] ? mapExample(rows[0]) : undefined;
 }
 
-export function updateExample(id: string, updates: { inputs?: Record<string, unknown>; expectedOutputs?: Record<string, unknown>; metadata?: Record<string, string>; split?: string }): boolean {
+export async function updateExample(
+  id: string,
+  updates: { inputs?: Record<string, unknown>; expectedOutputs?: Record<string, unknown>; metadata?: Record<string, string>; split?: string },
+): Promise<boolean> {
   const sets: string[] = [];
   const params: unknown[] = [];
+  let idx = 1;
 
   if (updates.inputs !== undefined) {
-    sets.push('inputs = ?');
-    params.push(JSON.stringify(updates.inputs));
+    sets.push(`inputs = $${idx++}`);
+    params.push(updates.inputs);
   }
   if (updates.expectedOutputs !== undefined) {
-    sets.push('expected_outputs = ?');
-    params.push(JSON.stringify(updates.expectedOutputs));
+    sets.push(`expected_outputs = $${idx++}`);
+    params.push(updates.expectedOutputs);
   }
   if (updates.metadata !== undefined) {
-    sets.push('metadata = ?');
-    params.push(JSON.stringify(updates.metadata));
+    sets.push(`metadata = $${idx++}`);
+    params.push(updates.metadata);
   }
   if (updates.split !== undefined) {
-    sets.push('split = ?');
+    sets.push(`split = $${idx++}`);
     params.push(updates.split);
   }
 
   if (sets.length === 0) return false;
   params.push(id);
-  const result = getDb()
-    .prepare(`UPDATE examples SET ${sets.join(', ')} WHERE id = ?`)
-    .run(...params);
-  return result.changes > 0;
+  const result = await getPool().query(
+    `UPDATE examples SET ${sets.join(', ')} WHERE id = $${idx}`, params,
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
-export function deleteExample(id: string): boolean {
-  const result = getDb().prepare('DELETE FROM examples WHERE id = ?').run(id);
-  return result.changes > 0;
+export async function deleteExample(id: string): Promise<boolean> {
+  const result = await getPool().query('DELETE FROM examples WHERE id = $1', [id]);
+  return (result.rowCount ?? 0) > 0;
 }
 
-interface ExampleRow {
-  id: string;
-  dataset_id: string;
-  inputs: string;
-  expected_outputs: string | null;
-  metadata: string;
-  split: string | null;
-  source_run_id: string | null;
-  created_at: string;
-}
-
-function mapExample(row: ExampleRow): Example {
+function mapExample(row: Record<string, unknown>): Example {
   return {
-    id: row.id,
-    datasetId: row.dataset_id,
-    inputs: parseJson(row.inputs, {}),
-    expectedOutputs: parseJson(row.expected_outputs, undefined),
-    metadata: parseJson(row.metadata, {}),
-    split: row.split ?? undefined,
-    sourceRunId: row.source_run_id ?? undefined,
-    createdAt: new Date(row.created_at),
+    id: row.id as string,
+    datasetId: row.dataset_id as string,
+    inputs: (row.inputs as Record<string, unknown>) ?? {},
+    expectedOutputs: (row.expected_outputs as Record<string, unknown>) ?? undefined,
+    metadata: (row.metadata as Record<string, string>) ?? {},
+    split: (row.split as string) ?? undefined,
+    sourceRunId: (row.source_run_id as string) ?? undefined,
+    createdAt: new Date(row.created_at as string),
   };
 }
 
@@ -754,89 +611,76 @@ function mapExample(row: ExampleRow): Example {
 // Experiments
 // ---------------------------------------------------------------------------
 
-export function insertExperiment(experiment: Experiment): void {
-  getDb().prepare(`
-    INSERT INTO experiments (id, name, dataset_id, description, metadata, status, created_at, completed_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    experiment.id,
-    experiment.name,
-    experiment.datasetId,
-    experiment.description ?? null,
-    JSON.stringify(experiment.metadata),
-    experiment.status,
-    toISOString(experiment.createdAt),
-    experiment.completedAt ? toISOString(experiment.completedAt) : null,
+export async function insertExperiment(experiment: Experiment): Promise<void> {
+  await getPool().query(
+    `INSERT INTO experiments (id, name, dataset_id, description, metadata, status, created_at, completed_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [experiment.id, experiment.name, experiment.datasetId,
+     experiment.description ?? null, experiment.metadata, experiment.status,
+     experiment.createdAt, experiment.completedAt ?? null],
   );
 }
 
-export function updateExperiment(id: string, updates: { status?: string; completedAt?: Date }): boolean {
+export async function updateExperiment(
+  id: string,
+  updates: { status?: string; completedAt?: Date },
+): Promise<boolean> {
   const sets: string[] = [];
   const params: unknown[] = [];
+  let idx = 1;
 
   if (updates.status !== undefined) {
-    sets.push('status = ?');
+    sets.push(`status = $${idx++}`);
     params.push(updates.status);
   }
   if (updates.completedAt !== undefined) {
-    sets.push('completed_at = ?');
-    params.push(toISOString(updates.completedAt));
+    sets.push(`completed_at = $${idx++}`);
+    params.push(updates.completedAt);
   }
 
   if (sets.length === 0) return false;
   params.push(id);
-  const result = getDb()
-    .prepare(`UPDATE experiments SET ${sets.join(', ')} WHERE id = ?`)
-    .run(...params);
-  return result.changes > 0;
+  const result = await getPool().query(
+    `UPDATE experiments SET ${sets.join(', ')} WHERE id = $${idx}`, params,
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
-export function getExperiment(id: string): Experiment | undefined {
-  const row = getDb()
-    .prepare('SELECT * FROM experiments WHERE id = ?')
-    .get(id) as ExperimentRow | undefined;
-  return row ? mapExperiment(row) : undefined;
+export async function getExperiment(id: string): Promise<Experiment | undefined> {
+  const { rows } = await getPool().query(
+    'SELECT * FROM experiments WHERE id = $1', [id],
+  );
+  return rows[0] ? mapExperiment(rows[0]) : undefined;
 }
 
-export function listExperiments(datasetId?: string): Experiment[] {
+export async function listExperiments(datasetId?: string): Promise<Experiment[]> {
   if (datasetId) {
-    const rows = getDb()
-      .prepare('SELECT * FROM experiments WHERE dataset_id = ? ORDER BY created_at DESC')
-      .all(datasetId) as ExperimentRow[];
+    const { rows } = await getPool().query(
+      'SELECT * FROM experiments WHERE dataset_id = $1 ORDER BY created_at DESC', [datasetId],
+    );
     return rows.map(mapExperiment);
   }
-  const rows = getDb()
-    .prepare('SELECT * FROM experiments ORDER BY created_at DESC')
-    .all() as ExperimentRow[];
+  const { rows } = await getPool().query(
+    'SELECT * FROM experiments ORDER BY created_at DESC',
+  );
   return rows.map(mapExperiment);
 }
 
-export function deleteExperiment(id: string): boolean {
-  const result = getDb().prepare('DELETE FROM experiments WHERE id = ?').run(id);
-  return result.changes > 0;
+export async function deleteExperiment(id: string): Promise<boolean> {
+  const result = await getPool().query('DELETE FROM experiments WHERE id = $1', [id]);
+  return (result.rowCount ?? 0) > 0;
 }
 
-interface ExperimentRow {
-  id: string;
-  name: string;
-  dataset_id: string;
-  description: string | null;
-  metadata: string;
-  status: string;
-  created_at: string;
-  completed_at: string | null;
-}
-
-function mapExperiment(row: ExperimentRow): Experiment {
+function mapExperiment(row: Record<string, unknown>): Experiment {
   return {
-    id: row.id,
-    name: row.name,
-    datasetId: row.dataset_id,
-    description: row.description ?? undefined,
-    metadata: parseJson(row.metadata, {}),
+    id: row.id as string,
+    name: row.name as string,
+    datasetId: row.dataset_id as string,
+    description: (row.description as string) ?? undefined,
+    metadata: (row.metadata as Record<string, string>) ?? {},
     status: row.status as Experiment['status'],
-    createdAt: new Date(row.created_at),
-    completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
+    createdAt: new Date(row.created_at as string),
+    completedAt: row.completed_at ? new Date(row.completed_at as string) : undefined,
   };
 }
 
@@ -844,59 +688,75 @@ function mapExperiment(row: ExperimentRow): Experiment {
 // Experiment Results
 // ---------------------------------------------------------------------------
 
-export function insertExperimentResult(result: ExperimentResult): void {
-  getDb().prepare(`
-    INSERT INTO experiment_results (id, experiment_id, example_id, trace_id, outputs, latency_ms, total_tokens, error, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    result.id,
-    result.experimentId,
-    result.exampleId,
-    result.traceId ?? null,
-    result.outputs ? JSON.stringify(result.outputs) : null,
-    result.latencyMs ?? null,
-    result.totalTokens ?? null,
-    result.error ?? null,
-    toISOString(result.createdAt),
+export async function insertExperimentResult(result: ExperimentResult): Promise<void> {
+  await getPool().query(
+    `INSERT INTO experiment_results (id, experiment_id, example_id, trace_id, outputs, latency_ms, total_tokens, error, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [result.id, result.experimentId, result.exampleId,
+     result.traceId ?? null, result.outputs ?? null,
+     result.latencyMs ?? null, result.totalTokens ?? null,
+     result.error ?? null, result.createdAt],
   );
 }
 
-export function listExperimentResults(experimentId: string): ExperimentResult[] {
-  const rows = getDb()
-    .prepare('SELECT * FROM experiment_results WHERE experiment_id = ? ORDER BY created_at ASC')
-    .all(experimentId) as ExperimentResultRow[];
+export async function listExperimentResults(experimentId: string): Promise<ExperimentResult[]> {
+  const { rows } = await getPool().query(
+    'SELECT * FROM experiment_results WHERE experiment_id = $1 ORDER BY created_at ASC', [experimentId],
+  );
   return rows.map(mapExperimentResult);
 }
 
-interface ExperimentResultRow {
-  id: string;
-  experiment_id: string;
-  example_id: string;
-  trace_id: string | null;
-  outputs: string | null;
-  latency_ms: number | null;
-  total_tokens: number | null;
-  error: string | null;
-  created_at: string;
-}
-
-function mapExperimentResult(row: ExperimentResultRow): ExperimentResult {
+function mapExperimentResult(row: Record<string, unknown>): ExperimentResult {
   return {
-    id: row.id,
-    experimentId: row.experiment_id,
-    exampleId: row.example_id,
-    traceId: row.trace_id ?? undefined,
-    outputs: parseJson(row.outputs, undefined),
-    latencyMs: row.latency_ms ?? undefined,
-    totalTokens: row.total_tokens ?? undefined,
-    error: row.error ?? undefined,
-    createdAt: new Date(row.created_at),
+    id: row.id as string,
+    experimentId: row.experiment_id as string,
+    exampleId: row.example_id as string,
+    traceId: (row.trace_id as string) ?? undefined,
+    outputs: (row.outputs as Record<string, unknown>) ?? undefined,
+    latencyMs: (row.latency_ms as number) ?? undefined,
+    totalTokens: (row.total_tokens as number) ?? undefined,
+    error: (row.error as string) ?? undefined,
+    createdAt: new Date(row.created_at as string),
   };
 }
 
 // ---------------------------------------------------------------------------
 // Aggregate metrics
 // ---------------------------------------------------------------------------
+
+export interface AgentMetrics {
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  traceCount: number;
+  lastTraceAt: string | null;
+}
+
+export async function getAgentMetrics(agentName: string): Promise<AgentMetrics | null> {
+  const { rows } = await getPool().query(
+    `SELECT
+       COUNT(t.id)::int as trace_count,
+       COALESCE(SUM(t.total_tokens), 0)::int as total_tokens,
+       COALESCE(SUM(t.prompt_tokens), 0)::int as prompt_tokens,
+       COALESCE(SUM(t.completion_tokens), 0)::int as completion_tokens,
+       MAX(t.started_at) as last_trace_at
+     FROM projects p
+     JOIN traces t ON t.project_id = p.id
+     WHERE p.name = $1`,
+    [agentName],
+  );
+
+  const row = rows[0];
+  if (!row || row.trace_count === 0) return null;
+
+  return {
+    totalTokens: row.total_tokens as number,
+    promptTokens: row.prompt_tokens as number,
+    completionTokens: row.completion_tokens as number,
+    traceCount: row.trace_count as number,
+    lastTraceAt: row.last_trace_at ? new Date(row.last_trace_at as string).toISOString() : null,
+  };
+}
 
 export interface ProjectStats {
   projectId: string;
@@ -909,81 +769,33 @@ export interface ProjectStats {
   lastTraceAt: string | null;
 }
 
-export interface AgentMetrics {
-  totalTokens: number;
-  promptTokens: number;
-  completionTokens: number;
-  traceCount: number;
-  lastTraceAt: string | null;
-}
-
-export function getAgentMetrics(agentName: string): AgentMetrics | null {
-  const d = getDb();
-  const row = d.prepare(`
-    SELECT
-      COUNT(t.id) as trace_count,
-      COALESCE(SUM(t.total_tokens), 0) as total_tokens,
-      COALESCE(SUM(t.prompt_tokens), 0) as prompt_tokens,
-      COALESCE(SUM(t.completion_tokens), 0) as completion_tokens,
-      MAX(t.started_at) as last_trace_at
-    FROM projects p
-    JOIN traces t ON t.project_id = p.id
-    WHERE p.name = ?
-  `).get(agentName) as {
-    trace_count: number;
-    total_tokens: number;
-    prompt_tokens: number;
-    completion_tokens: number;
-    last_trace_at: string | null;
-  } | undefined;
-
-  if (!row || row.trace_count === 0) return null;
-
-  return {
-    totalTokens: row.total_tokens,
-    promptTokens: row.prompt_tokens,
-    completionTokens: row.completion_tokens,
-    traceCount: row.trace_count,
-    lastTraceAt: row.last_trace_at,
-  };
-}
-
-export function getProjectStats(): ProjectStats[] {
-  const rows = getDb().prepare(`
+export async function getProjectStats(): Promise<ProjectStats[]> {
+  const { rows } = await getPool().query(`
     SELECT
       p.id as project_id,
       p.name as project_name,
-      COUNT(DISTINCT t.id) as trace_count,
-      COUNT(r.id) as run_count,
+      COUNT(DISTINCT t.id)::int as trace_count,
+      COUNT(r.id)::int as run_count,
       AVG(t.total_latency_ms) as avg_latency_ms,
-      COALESCE(SUM(t.total_tokens), 0) as total_tokens,
-      COUNT(CASE WHEN t.status = 'error' THEN 1 END) as error_count,
+      COALESCE(SUM(t.total_tokens), 0)::int as total_tokens,
+      COUNT(CASE WHEN t.status = 'error' THEN 1 END)::int as error_count,
       MAX(t.started_at) as last_trace_at
     FROM projects p
     LEFT JOIN traces t ON t.project_id = p.id
     LEFT JOIN runs r ON r.trace_id = t.id
     GROUP BY p.id
-    ORDER BY last_trace_at DESC
-  `).all() as Array<{
-    project_id: string;
-    project_name: string;
-    trace_count: number;
-    run_count: number;
-    avg_latency_ms: number | null;
-    total_tokens: number;
-    error_count: number;
-    last_trace_at: string | null;
-  }>;
+    ORDER BY last_trace_at DESC NULLS LAST
+  `);
 
   return rows.map((r) => ({
-    projectId: r.project_id,
-    projectName: r.project_name,
-    traceCount: r.trace_count,
-    runCount: r.run_count,
-    avgLatencyMs: r.avg_latency_ms,
-    totalTokens: r.total_tokens,
-    errorCount: r.error_count,
-    lastTraceAt: r.last_trace_at,
+    projectId: r.project_id as string,
+    projectName: r.project_name as string,
+    traceCount: r.trace_count as number,
+    runCount: r.run_count as number,
+    avgLatencyMs: r.avg_latency_ms as number | null,
+    totalTokens: r.total_tokens as number,
+    errorCount: r.error_count as number,
+    lastTraceAt: r.last_trace_at ? new Date(r.last_trace_at as string).toISOString() : null,
   }));
 }
 
@@ -994,7 +806,7 @@ export function getProjectStats(): ProjectStats[] {
 export type TimeGranularity = 'hour' | 'day' | 'week';
 
 export interface TimeSeriesPoint {
-  bucket: string; // ISO date string for the bucket start
+  bucket: string;
   traceCount: number;
   errorCount: number;
   avgLatencyMs: number | null;
@@ -1006,68 +818,50 @@ export interface TimeSeriesPoint {
 export interface TimeSeriesOptions {
   projectId?: string;
   granularity?: TimeGranularity;
-  /** Number of buckets to return (default 24) */
   buckets?: number;
 }
 
-function sqliteDateTrunc(granularity: TimeGranularity): string {
-  switch (granularity) {
-    case 'hour':
-      return "strftime('%Y-%m-%dT%H:00:00Z', started_at)";
-    case 'day':
-      return "strftime('%Y-%m-%dT00:00:00Z', started_at)";
-    case 'week':
-      return "strftime('%Y-%m-%dT00:00:00Z', started_at, 'weekday 0', '-6 days')";
-  }
-}
-
-export function getTimeSeries(options: TimeSeriesOptions = {}): TimeSeriesPoint[] {
+export async function getTimeSeries(options: TimeSeriesOptions = {}): Promise<TimeSeriesPoint[]> {
   const { projectId, granularity = 'hour', buckets = 24 } = options;
-  const d = getDb();
+  const p = getPool();
 
-  const trunc = sqliteDateTrunc(granularity);
+  const trunc = `date_trunc('${granularity}', started_at)`;
   const conditions: string[] = [];
   const params: unknown[] = [];
+  let idx = 1;
 
   if (projectId) {
-    conditions.push('project_id = ?');
+    conditions.push(`project_id = $${idx++}`);
     params.push(projectId);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  const rows = d.prepare(`
-    SELECT
-      ${trunc} as bucket,
-      COUNT(*) as trace_count,
-      COUNT(CASE WHEN status = 'error' THEN 1 END) as error_count,
-      AVG(total_latency_ms) as avg_latency_ms,
-      COALESCE(SUM(total_tokens), 0) as total_tokens,
-      COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
-      COALESCE(SUM(completion_tokens), 0) as completion_tokens
-    FROM traces
-    ${where}
-    GROUP BY bucket
-    ORDER BY bucket DESC
-    LIMIT ?
-  `).all(...params, buckets) as Array<{
-    bucket: string;
-    trace_count: number;
-    error_count: number;
-    avg_latency_ms: number | null;
-    total_tokens: number;
-    prompt_tokens: number;
-    completion_tokens: number;
-  }>;
+  const { rows } = await p.query(
+    `SELECT
+       ${trunc} as bucket,
+       COUNT(*)::int as trace_count,
+       COUNT(CASE WHEN status = 'error' THEN 1 END)::int as error_count,
+       AVG(total_latency_ms) as avg_latency_ms,
+       COALESCE(SUM(total_tokens), 0)::int as total_tokens,
+       COALESCE(SUM(prompt_tokens), 0)::int as prompt_tokens,
+       COALESCE(SUM(completion_tokens), 0)::int as completion_tokens
+     FROM traces
+     ${where}
+     GROUP BY bucket
+     ORDER BY bucket DESC
+     LIMIT $${idx++}`,
+    [...params, buckets],
+  );
 
   return rows.reverse().map((r) => ({
-    bucket: r.bucket,
-    traceCount: r.trace_count,
-    errorCount: r.error_count,
-    avgLatencyMs: r.avg_latency_ms,
-    totalTokens: r.total_tokens,
-    promptTokens: r.prompt_tokens,
-    completionTokens: r.completion_tokens,
+    bucket: new Date(r.bucket as string).toISOString(),
+    traceCount: r.trace_count as number,
+    errorCount: r.error_count as number,
+    avgLatencyMs: r.avg_latency_ms as number | null,
+    totalTokens: r.total_tokens as number,
+    promptTokens: r.prompt_tokens as number,
+    completionTokens: r.completion_tokens as number,
   }));
 }
 
@@ -1085,49 +879,42 @@ export interface ModelUsage {
   avgLatencyMs: number | null;
 }
 
-export function getModelUsage(projectId?: string): ModelUsage[] {
-  const d = getDb();
-  const conditions: string[] = ["model IS NOT NULL"];
+export async function getModelUsage(projectId?: string): Promise<ModelUsage[]> {
+  const conditions: string[] = ['model IS NOT NULL'];
   const params: unknown[] = [];
+  let idx = 1;
 
   if (projectId) {
-    conditions.push('r.trace_id IN (SELECT id FROM traces WHERE project_id = ?)');
+    conditions.push(`r.trace_id IN (SELECT id FROM traces WHERE project_id = $${idx++})`);
     params.push(projectId);
   }
 
   const where = `WHERE ${conditions.join(' AND ')}`;
 
-  const rows = d.prepare(`
-    SELECT
-      COALESCE(r.model, 'unknown') as model,
-      COALESCE(r.provider, 'unknown') as provider,
-      COUNT(*) as call_count,
-      COALESCE(SUM(r.total_tokens), 0) as total_tokens,
-      COALESCE(SUM(r.prompt_tokens), 0) as prompt_tokens,
-      COALESCE(SUM(r.completion_tokens), 0) as completion_tokens,
-      AVG(r.latency_ms) as avg_latency_ms
-    FROM runs r
-    ${where}
-    GROUP BY r.model, r.provider
-    ORDER BY total_tokens DESC
-  `).all(...params) as Array<{
-    model: string;
-    provider: string;
-    call_count: number;
-    total_tokens: number;
-    prompt_tokens: number;
-    completion_tokens: number;
-    avg_latency_ms: number | null;
-  }>;
+  const { rows } = await getPool().query(
+    `SELECT
+       COALESCE(r.model, 'unknown') as model,
+       COALESCE(r.provider, 'unknown') as provider,
+       COUNT(*)::int as call_count,
+       COALESCE(SUM(r.total_tokens), 0)::int as total_tokens,
+       COALESCE(SUM(r.prompt_tokens), 0)::int as prompt_tokens,
+       COALESCE(SUM(r.completion_tokens), 0)::int as completion_tokens,
+       AVG(r.latency_ms) as avg_latency_ms
+     FROM runs r
+     ${where}
+     GROUP BY r.model, r.provider
+     ORDER BY total_tokens DESC`,
+    params,
+  );
 
   return rows.map((r) => ({
-    model: r.model,
-    provider: r.provider,
-    callCount: r.call_count,
-    totalTokens: r.total_tokens,
-    promptTokens: r.prompt_tokens,
-    completionTokens: r.completion_tokens,
-    avgLatencyMs: r.avg_latency_ms,
+    model: r.model as string,
+    provider: r.provider as string,
+    callCount: r.call_count as number,
+    totalTokens: r.total_tokens as number,
+    promptTokens: r.prompt_tokens as number,
+    completionTokens: r.completion_tokens as number,
+    avgLatencyMs: r.avg_latency_ms as number | null,
   }));
 }
 
@@ -1143,30 +930,25 @@ export interface ErrorRate {
   rate: number;
 }
 
-export function getErrorRates(): ErrorRate[] {
-  const rows = getDb().prepare(`
+export async function getErrorRates(): Promise<ErrorRate[]> {
+  const { rows } = await getPool().query(`
     SELECT
       p.id as project_id,
       p.name as project_name,
-      COUNT(t.id) as total,
-      COUNT(CASE WHEN t.status = 'error' THEN 1 END) as errors
+      COUNT(t.id)::int as total,
+      COUNT(CASE WHEN t.status = 'error' THEN 1 END)::int as errors
     FROM projects p
     LEFT JOIN traces t ON t.project_id = p.id
     GROUP BY p.id
-    HAVING total > 0
+    HAVING COUNT(t.id) > 0
     ORDER BY errors DESC
-  `).all() as Array<{
-    project_id: string;
-    project_name: string;
-    total: number;
-    errors: number;
-  }>;
+  `);
 
   return rows.map((r) => ({
-    projectId: r.project_id,
-    projectName: r.project_name,
-    total: r.total,
-    errors: r.errors,
-    rate: r.total > 0 ? r.errors / r.total : 0,
+    projectId: r.project_id as string,
+    projectName: r.project_name as string,
+    total: r.total as number,
+    errors: r.errors as number,
+    rate: (r.total as number) > 0 ? (r.errors as number) / (r.total as number) : 0,
   }));
 }

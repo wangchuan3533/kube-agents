@@ -1,5 +1,44 @@
 import { describe, it, expect, vi } from 'vitest';
 
+vi.mock('./db.js', () => ({
+  listProjects: vi.fn().mockResolvedValue([]),
+  getProjectByName: vi.fn().mockResolvedValue(null),
+  getProjectStats: vi.fn().mockResolvedValue([]),
+  listTraces: vi.fn().mockResolvedValue({ traces: [], total: 0, hasMore: false }),
+  getTrace: vi.fn().mockResolvedValue(null),
+  listRunsForTrace: vi.fn().mockResolvedValue([]),
+  getRun: vi.fn().mockResolvedValue(null),
+  insertFeedback: vi.fn().mockResolvedValue(undefined),
+  listFeedbackForTrace: vi.fn().mockResolvedValue([]),
+  listFeedbackForRun: vi.fn().mockResolvedValue([]),
+  deleteFeedback: vi.fn().mockResolvedValue(false),
+  insertDataset: vi.fn().mockResolvedValue(undefined),
+  updateDataset: vi.fn().mockResolvedValue(false),
+  getDataset: vi.fn().mockResolvedValue(null),
+  listDatasets: vi.fn().mockResolvedValue([]),
+  deleteDataset: vi.fn().mockResolvedValue(false),
+  insertExample: vi.fn().mockResolvedValue(undefined),
+  listExamples: vi.fn().mockResolvedValue([]),
+  getExample: vi.fn().mockResolvedValue(null),
+  updateExample: vi.fn().mockResolvedValue(false),
+  deleteExample: vi.fn().mockResolvedValue(false),
+  listExperiments: vi.fn().mockResolvedValue([]),
+  getExperiment: vi.fn().mockResolvedValue(null),
+  deleteExperiment: vi.fn().mockResolvedValue(false),
+  listExperimentResults: vi.fn().mockResolvedValue([]),
+  getTimeSeries: vi.fn().mockResolvedValue([]),
+  getModelUsage: vi.fn().mockResolvedValue([]),
+  getErrorRates: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('./nats-client.js', () => ({
+  isNatsAvailable: vi.fn().mockReturnValue(false),
+  getAgentMessages: vi.fn().mockResolvedValue({ messages: [], hasMore: false }),
+  getThreadMessages: vi.fn().mockResolvedValue([]),
+  initNats: vi.fn().mockResolvedValue(undefined),
+  initTraceConsumer: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('./k8s-client.js', () => ({
   listAgents: vi.fn().mockResolvedValue([
     {

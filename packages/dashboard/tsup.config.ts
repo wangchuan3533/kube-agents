@@ -7,5 +7,5 @@ export default defineConfig({
   sourcemap: true,
   outDir: 'dist/server',
   noExternal: [/^@kube-agents\//],
-  external: ['nats', '@kubernetes/client-node', 'better-sqlite3'],
+  external: ['nats', '@kubernetes/client-node', 'pg'],
 });
