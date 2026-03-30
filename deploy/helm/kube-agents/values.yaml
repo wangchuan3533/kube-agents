@@ -44,7 +44,7 @@ dashboard:
   image:
     repository: 192.168.1.50:5000/kube-agents/dashboard
     tag: latest
-    pullPolicy: Never
+    pullPolicy: Always
   replicas: 1
   port: 3001
   service:
