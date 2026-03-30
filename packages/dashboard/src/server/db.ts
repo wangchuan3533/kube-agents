@@ -909,6 +909,45 @@ export interface ProjectStats {
   lastTraceAt: string | null;
 }
 
+export interface AgentMetrics {
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  traceCount: number;
+  lastTraceAt: string | null;
+}
+
+export function getAgentMetrics(agentName: string): AgentMetrics | null {
+  const d = getDb();
+  const row = d.prepare(`
+    SELECT
+      COUNT(t.id) as trace_count,
+      COALESCE(SUM(t.total_tokens), 0) as total_tokens,
+      COALESCE(SUM(t.prompt_tokens), 0) as prompt_tokens,
+      COALESCE(SUM(t.completion_tokens), 0) as completion_tokens,
+      MAX(t.started_at) as last_trace_at
+    FROM projects p
+    JOIN traces t ON t.project_id = p.id
+    WHERE p.name = ?
+  `).get(agentName) as {
+    trace_count: number;
+    total_tokens: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    last_trace_at: string | null;
+  } | undefined;
+
+  if (!row || row.trace_count === 0) return null;
+
+  return {
+    totalTokens: row.total_tokens,
+    promptTokens: row.prompt_tokens,
+    completionTokens: row.completion_tokens,
+    traceCount: row.trace_count,
+    lastTraceAt: row.last_trace_at,
+  };
+}
+
 export function getProjectStats(): ProjectStats[] {
   const rows = getDb().prepare(`
     SELECT

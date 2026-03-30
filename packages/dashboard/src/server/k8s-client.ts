@@ -1,4 +1,5 @@
 import * as k8s from '@kubernetes/client-node';
+import { getAgentMetrics } from './db.js';
 
 const kc = new k8s.KubeConfig();
 
@@ -114,10 +115,11 @@ export async function listAgents(namespace: string): Promise<K8sAgent[]> {
   const body = agentResponse as { items?: K8sAgent[] };
   const agents = body.items ?? [];
 
-  // Enrich agents with pod status
+  // Enrich agents with pod status and SQLite trace metrics
   return agents.map((agent) => {
     const pod = podStatuses.get(agent.metadata.name);
     const isReady = pod?.status?.containerStatuses?.every((c) => c.ready) ?? false;
+    const metrics = getAgentMetrics(agent.metadata.name);
 
     return {
       ...agent,
@@ -125,12 +127,12 @@ export async function listAgents(namespace: string): Promise<K8sAgent[]> {
         phase: agent.status?.phase ?? podPhase(pod),
         message: agent.status?.message,
         readyReplicas: agent.status?.readyReplicas ?? (isReady ? 1 : 0),
-        messagesReceived: agent.status?.messagesReceived ?? 0,
+        messagesReceived: agent.status?.messagesReceived || (metrics?.traceCount ?? 0),
         messagesSent: agent.status?.messagesSent ?? 0,
-        totalTokensUsed: agent.status?.totalTokensUsed ?? 0,
-        promptTokens: agent.status?.promptTokens ?? 0,
-        completionTokens: agent.status?.completionTokens ?? 0,
-        lastActiveAt: agent.status?.lastActiveAt,
+        totalTokensUsed: agent.status?.totalTokensUsed || (metrics?.totalTokens ?? 0),
+        promptTokens: agent.status?.promptTokens || (metrics?.promptTokens ?? 0),
+        completionTokens: agent.status?.completionTokens || (metrics?.completionTokens ?? 0),
+        lastActiveAt: agent.status?.lastActiveAt ?? metrics?.lastTraceAt ?? undefined,
       },
     };
   });
@@ -152,6 +154,7 @@ export async function getAgent(namespace: string, name: string): Promise<K8sAgen
     const agent = agentResponse as K8sAgent;
     const pod = podStatuses.get(agent.metadata.name);
     const isReady = pod?.status?.containerStatuses?.every((c) => c.ready) ?? false;
+    const metrics = getAgentMetrics(agent.metadata.name);
 
     return {
       ...agent,
@@ -159,12 +162,12 @@ export async function getAgent(namespace: string, name: string): Promise<K8sAgen
         phase: agent.status?.phase ?? podPhase(pod),
         message: agent.status?.message,
         readyReplicas: agent.status?.readyReplicas ?? (isReady ? 1 : 0),
-        messagesReceived: agent.status?.messagesReceived ?? 0,
+        messagesReceived: agent.status?.messagesReceived || (metrics?.traceCount ?? 0),
         messagesSent: agent.status?.messagesSent ?? 0,
-        totalTokensUsed: agent.status?.totalTokensUsed ?? 0,
-        promptTokens: agent.status?.promptTokens ?? 0,
-        completionTokens: agent.status?.completionTokens ?? 0,
-        lastActiveAt: agent.status?.lastActiveAt,
+        totalTokensUsed: agent.status?.totalTokensUsed || (metrics?.totalTokens ?? 0),
+        promptTokens: agent.status?.promptTokens || (metrics?.promptTokens ?? 0),
+        completionTokens: agent.status?.completionTokens || (metrics?.completionTokens ?? 0),
+        lastActiveAt: agent.status?.lastActiveAt ?? metrics?.lastTraceAt ?? undefined,
       },
     };
   } catch {
