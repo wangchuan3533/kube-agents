@@ -18,13 +18,22 @@ export interface AgentLoopDeps {
 export async function handleEmail(deps: AgentLoopDeps, email: Email): Promise<void> {
   const { spec, mailbox, llm, toolRegistry, tracer } = deps;
 
-  // Start trace run
-  const run = tracer?.startRun(
-    spec.identity.name,
-    spec.identity.email,
-    email.id,
-    email.threadId,
-  );
+  // Start a trace for this email processing cycle
+  const trace = tracer?.startTrace(spec.identity.name, `email:${email.subject.slice(0, 50)}`, {
+    sessionId: email.threadId,
+    inputs: {
+      emailId: email.id,
+      from: email.from,
+      to: email.to,
+      subject: email.subject,
+      body: email.body,
+    },
+    metadata: {
+      agentName: spec.identity.name,
+      agentEmail: spec.identity.email,
+    },
+    tags: spec.identity.groups ?? [],
+  });
 
   try {
     const threadHistory: Email[] = [];
@@ -35,33 +44,34 @@ export async function handleEmail(deps: AgentLoopDeps, email: Email): Promise<vo
     for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
       console.log(`[Agent ${spec.identity.name}] LLM call #${iteration + 1} (${messages.length} messages, ${availableTools.length} tools)`);
 
-      // Trace: record LLM call timing
-      const llmStart = new Date();
+      // Start an LLM run within the trace
+      const llmRun = trace?.startRun(`llm:${spec.llm.model}`, 'llm', {
+        metadata: { iteration: String(iteration + 1) },
+      });
+
       const messagesSnapshot: LLMMessage[] = messages.map((m) => ({ ...m }));
       const response = await llm.complete({
         messages,
         tools: availableTools.length > 0 ? availableTools : undefined,
       });
-      const llmEnd = new Date();
 
       console.log(`[Agent ${spec.identity.name}] LLM response: ${response.finishReason}, ${response.toolCalls.length} tool calls, ${response.usage.totalTokens} tokens`);
 
-      // Trace: record LLM span
-      await run?.recordLLMCall(
-        {
-          provider: spec.llm.provider,
-          model: spec.llm.model,
-          messages: messagesSnapshot,
-          completion: response.content,
-          toolCalls: response.toolCalls,
-          finishReason: response.finishReason,
-          usage: response.usage,
-          temperature: spec.llm.temperature,
-          iteration: iteration + 1,
-        },
-        llmStart,
-        llmEnd,
-      );
+      // Record LLM result and complete the run
+      llmRun?.setLLMResult({
+        model: spec.llm.model,
+        provider: spec.llm.provider,
+        temperature: spec.llm.temperature,
+        promptMessages: messagesSnapshot,
+        completion: response.content,
+        finishReason: response.finishReason,
+        toolCalls: response.toolCalls,
+        usage: response.usage,
+      });
+      await llmRun?.complete();
+
+      // Accumulate tokens on the trace
+      trace?.addTokens(response.usage);
 
       if (response.finishReason === 'tool_calls' && response.toolCalls.length > 0) {
         messages.push({
@@ -70,25 +80,22 @@ export async function handleEmail(deps: AgentLoopDeps, email: Email): Promise<vo
           toolCalls: response.toolCalls,
         });
 
-        // Execute all tool calls with tracing
+        // Execute all tool calls with tracing (as children of the LLM run)
         const results = await Promise.all(
           response.toolCalls.map(async (tc) => {
-            const toolStart = new Date();
-            const result = await toolRegistry.execute(tc.name, JSON.parse(tc.arguments), tc.id);
-            const toolEnd = new Date();
+            const toolRun = trace?.startRun(`tool:${tc.name}`, 'tool', {
+              inputs: { arguments: tc.arguments },
+              metadata: { toolCallId: tc.id },
+            });
 
-            // Trace: record tool span
-            await run?.recordToolCall(
-              {
-                name: tc.name,
-                arguments: tc.arguments,
-                result: result.result,
-                isError: result.isError ?? false,
-                toolCallId: result.toolCallId,
-              },
-              toolStart,
-              toolEnd,
-            );
+            const result = await toolRegistry.execute(tc.name, JSON.parse(tc.arguments), tc.id);
+
+            toolRun?.setToolResult(result.result, result.isError ?? false);
+            if (result.isError) {
+              await toolRun?.fail(result.result);
+            } else {
+              await toolRun?.complete({ result: result.result });
+            }
 
             return result;
           }),
@@ -111,7 +118,7 @@ export async function handleEmail(deps: AgentLoopDeps, email: Email): Promise<vo
         await mailbox.reply(email, response.content);
       }
 
-      await run?.complete();
+      await trace?.complete({ response: response.content });
       return;
     }
 
@@ -120,9 +127,9 @@ export async function handleEmail(deps: AgentLoopDeps, email: Email): Promise<vo
       email,
       'I reached the maximum number of tool iterations. Here is what I have so far.',
     );
-    await run?.complete();
+    await trace?.complete({ response: 'Max iterations reached' });
   } catch (err) {
-    await run?.fail(err instanceof Error ? err.message : String(err));
+    await trace?.fail(err instanceof Error ? err.message : String(err));
     throw err;
   }
 }

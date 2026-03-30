@@ -49,8 +49,8 @@ export function AgentDetailPage({ namespace, name }: AgentDetailPageProps) {
   if (error || !agent) {
     return (
       <div>
-        <a href="#/" className="text-blue-400 hover:text-blue-300 text-sm mb-4 inline-block">
-          ← All Agents
+        <a href="#" className="text-gray-400 hover:text-gray-300 text-sm mb-4 inline-block">
+          &larr; Overview
         </a>
         <div className="p-4 bg-red-900/30 border border-red-800 rounded text-red-300 text-sm">
           {error ?? 'Agent not found'}
@@ -186,7 +186,7 @@ export function AgentDetailPage({ namespace, name }: AgentDetailPageProps) {
       )}
 
       {activeTab === 'traces' && (
-        <TraceRunTable runs={traceState.runs} loading={traceState.loading} />
+        <TraceRunTable traces={traceState.traces} loading={traceState.loading} />
       )}
 
       {activeTab === 'configuration' && (

@@ -9,8 +9,8 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-function formatAvgLatency(runs: Array<{ totalLatencyMs?: number }>): string {
-  const valid = runs.filter((r) => r.totalLatencyMs !== undefined);
+function formatAvgLatency(traces: Array<{ totalLatencyMs?: number }>): string {
+  const valid = traces.filter((r) => r.totalLatencyMs !== undefined);
   if (valid.length === 0) return '—';
   const avg = valid.reduce((sum, r) => sum + r.totalLatencyMs!, 0) / valid.length;
   if (avg >= 60_000) return `${(avg / 60_000).toFixed(1)}m`;
@@ -27,27 +27,24 @@ const STATUS_OPTIONS = [
 
 export function TracesPage() {
   const [statusFilter, setStatusFilter] = useState('');
-  const { runs, total, loading, error, refresh } = useTraces({
+  const { traces, total, loading, error, refresh } = useTraces({
     status: statusFilter || undefined,
   });
 
-  const totalTokens = runs.reduce((s, r) => s + r.totalTokens, 0);
-  const errorCount = runs.filter((r) => r.status === 'error').length;
+  const totalTokens = traces.reduce((s, r) => s + r.totalTokens, 0);
+  const errorCount = traces.filter((r) => r.status === 'error').length;
 
   return (
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <a href="#/" className="text-blue-400 hover:text-blue-300 text-sm mb-2 inline-block">
-            ← Dashboard
-          </a>
           <h1 className="text-2xl font-bold text-white">Traces</h1>
           <p className="text-gray-400 text-sm mt-1">LLM call tracing and tool execution inspection</p>
         </div>
         <button
           onClick={refresh}
-          className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-sm border border-gray-700 transition-colors"
+          className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-sm transition-colors"
         >
           Refresh
         </button>
@@ -61,8 +58,8 @@ export function TracesPage() {
 
       {/* Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <MetricCard label="Total Runs" value={total} />
-        <MetricCard label="Avg Latency" value={formatAvgLatency(runs)} color="text-blue-400" />
+        <MetricCard label="Total Traces" value={total} />
+        <MetricCard label="Avg Latency" value={formatAvgLatency(traces)} color="text-blue-400" />
         <MetricCard label="Total Tokens" value={formatTokens(totalTokens)} color="text-purple-400" />
         <MetricCard
           label="Errors"
@@ -90,7 +87,7 @@ export function TracesPage() {
       </div>
 
       {/* Table */}
-      <TraceRunTable runs={runs} loading={loading} />
+      <TraceRunTable traces={traces} loading={loading} />
     </div>
   );
 }

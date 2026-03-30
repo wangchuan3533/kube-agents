@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { TraceRun, TraceListResponse } from '../types.js';
+import type { TraceData, TraceListResponse } from '../types.js';
 
 const POLL_INTERVAL = 5000;
 
@@ -9,7 +9,7 @@ interface UseTracesOptions {
 }
 
 export function useTraces(options: UseTracesOptions = {}) {
-  const [runs, setRuns] = useState<TraceRun[]>([]);
+  const [traces, setTraces] = useState<TraceData[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +24,7 @@ export function useTraces(options: UseTracesOptions = {}) {
       const res = await fetch(`/api/traces?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json: TraceListResponse = await res.json();
-      setRuns(json.runs);
+      setTraces(json.traces);
       setTotal(json.total);
       setError(null);
     } catch (err) {
@@ -40,5 +40,5 @@ export function useTraces(options: UseTracesOptions = {}) {
     return () => clearInterval(interval);
   }, [refresh]);
 
-  return { runs, total, loading, error, refresh };
+  return { traces, total, loading, error, refresh };
 }

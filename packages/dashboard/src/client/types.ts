@@ -87,7 +87,210 @@ export interface OverviewData {
   groups: AgentGroupData[];
 }
 
-// Trace types
+// ---------------------------------------------------------------------------
+// New observability types (LangSmith-aligned)
+// ---------------------------------------------------------------------------
+
+export interface ProjectData {
+  id: string;
+  name: string;
+  description?: string;
+  metadata: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectStats {
+  projectId: string;
+  projectName: string;
+  traceCount: number;
+  runCount: number;
+  avgLatencyMs: number | null;
+  totalTokens: number;
+  errorCount: number;
+  lastTraceAt: string | null;
+}
+
+export interface ProjectsResponse {
+  projects: ProjectData[];
+  stats: ProjectStats[];
+}
+
+export interface TraceData {
+  id: string;
+  projectId: string;
+  name: string;
+  sessionId?: string;
+  status: 'running' | 'completed' | 'error';
+  inputs?: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
+  error?: string;
+  metadata: Record<string, string>;
+  tags: string[];
+  startedAt: string;
+  completedAt?: string;
+  totalLatencyMs?: number;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  cost?: number;
+}
+
+export interface RunData {
+  id: string;
+  traceId: string;
+  parentRunId?: string;
+  name: string;
+  runType: 'llm' | 'tool' | 'chain' | 'retriever' | 'agent';
+  status: 'running' | 'completed' | 'error';
+  inputs?: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
+  error?: string;
+  metadata: Record<string, string>;
+  tags: string[];
+  startedAt: string;
+  completedAt?: string;
+  latencyMs?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  model?: string;
+  provider?: string;
+  temperature?: number;
+  promptMessages?: Array<{
+    role: string;
+    content: string;
+    toolCallId?: string;
+    toolCalls?: Array<{ id: string; name: string; arguments: string }>;
+  }>;
+  completion?: string;
+  finishReason?: string;
+  toolCalls: Array<{ id: string; name: string; arguments: string }>;
+}
+
+export interface FeedbackData {
+  id: string;
+  runId?: string;
+  traceId: string;
+  key: string;
+  score?: number;
+  value?: string;
+  comment?: string;
+  source: 'human' | 'code' | 'llm';
+  createdAt: string;
+}
+
+export interface TraceListResponse {
+  traces: TraceData[];
+  total: number;
+  hasMore: boolean;
+}
+
+export interface TraceDetailResponse {
+  trace: TraceData;
+  runs: RunData[];
+  feedback: FeedbackData[];
+}
+
+// ---------------------------------------------------------------------------
+// Evaluation types
+// ---------------------------------------------------------------------------
+
+export interface DatasetData {
+  id: string;
+  name: string;
+  description?: string;
+  metadata: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ExampleData {
+  id: string;
+  datasetId: string;
+  inputs: Record<string, unknown>;
+  expectedOutputs?: Record<string, unknown>;
+  metadata: Record<string, string>;
+  split?: string;
+  sourceRunId?: string;
+  createdAt: string;
+}
+
+export interface ExperimentData {
+  id: string;
+  name: string;
+  datasetId: string;
+  description?: string;
+  metadata: Record<string, string>;
+  status: 'running' | 'completed' | 'error';
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface ExperimentResultData {
+  id: string;
+  experimentId: string;
+  exampleId: string;
+  traceId?: string;
+  outputs?: Record<string, unknown>;
+  latencyMs?: number;
+  totalTokens?: number;
+  error?: string;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Monitoring types
+// ---------------------------------------------------------------------------
+
+export interface TimeSeriesPoint {
+  bucket: string;
+  traceCount: number;
+  errorCount: number;
+  avgLatencyMs: number | null;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+}
+
+export interface ModelUsage {
+  model: string;
+  provider: string;
+  callCount: number;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  avgLatencyMs: number | null;
+}
+
+export interface ErrorRate {
+  projectId: string;
+  projectName: string;
+  total: number;
+  errors: number;
+  rate: number;
+}
+
+export interface MonitoringSummary {
+  totalTraces: number;
+  totalTokens: number;
+  totalErrors: number;
+  errorRate: number;
+  avgLatencyMs: number | null;
+  projectCount: number;
+}
+
+export interface MonitoringData {
+  summary: MonitoringSummary;
+  timeseries: TimeSeriesPoint[];
+  models: ModelUsage[];
+  errors: ErrorRate[];
+  projectStats: ProjectStats[];
+}
+
+// ---------------------------------------------------------------------------
+// Legacy types (kept for backward-compat with existing components)
+// ---------------------------------------------------------------------------
 
 export interface TraceRun {
   id: string;
@@ -141,15 +344,4 @@ export interface TraceSpan {
   latencyMs: number;
   llm?: TraceLLMSpan;
   tool?: TraceToolSpan;
-}
-
-export interface TraceListResponse {
-  runs: TraceRun[];
-  total: number;
-  hasMore: boolean;
-}
-
-export interface TraceDetailResponse {
-  run: TraceRun;
-  spans: TraceSpan[];
 }

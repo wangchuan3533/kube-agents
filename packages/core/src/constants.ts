@@ -11,8 +11,12 @@ export const NATS_SUBJECTS = {
   directMail: (email: string) => `mail.${email.replace('@', '.')}`,
   groupMail: (groupEmail: string) => `mail.group.${groupEmail.replace('@', '.')}`,
   deadLetter: 'mail.dead-letter',
-  traceRun: (agentName: string) => `trace.run.${agentName}`,
-  traceSpan: (agentName: string) => `trace.span.${agentName}`,
+  // New trace subjects (project-scoped)
+  trace: (projectName: string) => `trace.trace.${projectName}`,
+  run: (projectName: string) => `trace.run.${projectName}`,
+  // Legacy subjects (kept for backward compat with old runtime)
+  legacyTraceRun: (agentName: string) => `trace.run.${agentName}`,
+  legacyTraceSpan: (agentName: string) => `trace.span.${agentName}`,
 } as const;
 
 export const LABELS = {

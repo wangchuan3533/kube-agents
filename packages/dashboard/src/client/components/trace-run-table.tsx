@@ -1,4 +1,4 @@
-import type { TraceRun } from '../types.js';
+import type { TraceData } from '../types.js';
 
 const STATUS_COLORS: Record<string, string> = {
   running: 'bg-blue-900 text-blue-300 border-blue-700',
@@ -24,16 +24,16 @@ function formatTime(iso: string): string {
 }
 
 interface TraceRunTableProps {
-  runs: TraceRun[];
+  traces: TraceData[];
   loading?: boolean;
 }
 
-export function TraceRunTable({ runs, loading }: TraceRunTableProps) {
+export function TraceRunTable({ traces, loading }: TraceRunTableProps) {
   if (loading) {
     return <div className="text-gray-500 text-sm py-8 text-center">Loading traces...</div>;
   }
 
-  if (runs.length === 0) {
+  if (traces.length === 0) {
     return (
       <div className="text-gray-500 text-sm py-8 text-center border border-gray-800 rounded-lg bg-gray-900/50">
         No traces yet. Send a task to an agent to generate traces.
@@ -46,34 +46,40 @@ export function TraceRunTable({ runs, loading }: TraceRunTableProps) {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-900 text-gray-400 text-xs uppercase tracking-wide">
-            <th className="text-left px-4 py-3">Agent</th>
+            <th className="text-left px-4 py-3">Name</th>
             <th className="text-left px-4 py-3">Status</th>
-            <th className="text-right px-4 py-3">Iterations</th>
             <th className="text-right px-4 py-3">Tokens</th>
             <th className="text-right px-4 py-3">Latency</th>
+            <th className="text-left px-4 py-3">Tags</th>
             <th className="text-right px-4 py-3">Time</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-800">
-          {runs.map((run) => (
+          {traces.map((trace) => (
             <tr
-              key={run.id}
+              key={trace.id}
               className="hover:bg-gray-800/50 cursor-pointer transition-colors"
-              onClick={() => { window.location.hash = `#/traces/${run.id}`; }}
+              onClick={() => { window.location.hash = `#/traces/${trace.id}`; }}
             >
               <td className="px-4 py-3">
-                <div className="text-white font-medium">{run.agentName}</div>
-                <div className="text-gray-500 text-xs font-mono">{run.emailId.slice(0, 8)}...</div>
+                <div className="text-white font-medium">{trace.name}</div>
+                <div className="text-gray-500 text-xs font-mono">{trace.id.slice(0, 8)}...</div>
               </td>
               <td className="px-4 py-3">
-                <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${STATUS_COLORS[run.status] ?? 'bg-gray-800 text-gray-400 border-gray-600'}`}>
-                  {run.status}
+                <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${STATUS_COLORS[trace.status] ?? 'bg-gray-800 text-gray-400 border-gray-600'}`}>
+                  {trace.status}
                 </span>
               </td>
-              <td className="px-4 py-3 text-right text-gray-300">{run.iterationCount}</td>
-              <td className="px-4 py-3 text-right text-purple-400">{formatTokens(run.totalTokens)}</td>
-              <td className="px-4 py-3 text-right text-gray-300">{formatLatency(run.totalLatencyMs)}</td>
-              <td className="px-4 py-3 text-right text-gray-500">{formatTime(run.startedAt)}</td>
+              <td className="px-4 py-3 text-right text-purple-400">{formatTokens(trace.totalTokens)}</td>
+              <td className="px-4 py-3 text-right text-gray-300">{formatLatency(trace.totalLatencyMs)}</td>
+              <td className="px-4 py-3">
+                <div className="flex gap-1 flex-wrap">
+                  {trace.tags.slice(0, 3).map((tag) => (
+                    <span key={tag} className="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{tag}</span>
+                  ))}
+                </div>
+              </td>
+              <td className="px-4 py-3 text-right text-gray-500">{formatTime(trace.startedAt)}</td>
             </tr>
           ))}
         </tbody>

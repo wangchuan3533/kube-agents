@@ -3,9 +3,15 @@ import {
   type JetStreamClient,
   type JetStreamManager,
 } from 'nats';
-import { type Email, STREAM_NAME, TRACE_STREAM_NAME, type TraceRun, type TraceSpan } from '@kube-agents/core';
+import { type Email, STREAM_NAME, TRACE_STREAM_NAME, type TraceRun, type TraceSpan, type Trace, type Run } from '@kube-agents/core';
 import { createNatsConnection, decodeEmail, subjectsForAgent } from '@kube-agents/mail';
-import { upsertRun, addSpan } from './trace-store.js';
+import {
+  upsertProject,
+  upsertTrace,
+  insertRun,
+  getProjectByName,
+} from './db.js';
+import { randomUUID } from 'node:crypto';
 
 let nc: NatsConnection | undefined;
 let js: JetStreamClient | undefined;
@@ -32,10 +38,116 @@ export function isNatsAvailable(): boolean {
   return natsAvailable;
 }
 
+// ---------------------------------------------------------------------------
+// Legacy format ingestion — maps old TraceRun/TraceSpan to new Project/Trace/Run
+// ---------------------------------------------------------------------------
+
+function ensureProject(agentName: string): string {
+  const existing = getProjectByName(agentName);
+  if (existing) return existing.id;
+
+  const id = randomUUID();
+  const now = new Date();
+  upsertProject({
+    id,
+    name: agentName,
+    description: `Auto-created project for agent ${agentName}`,
+    metadata: {},
+    createdAt: now,
+    updatedAt: now,
+  });
+  return id;
+}
+
+function ingestLegacyTraceRun(raw: TraceRun): void {
+  const projectId = ensureProject(raw.agentName);
+
+  upsertTrace({
+    id: raw.id,
+    projectId,
+    name: `email:${raw.emailId.slice(0, 8)}`,
+    sessionId: raw.threadId,
+    status: raw.status,
+    inputs: { emailId: raw.emailId, from: raw.agentEmail },
+    outputs: undefined,
+    error: raw.error,
+    metadata: { agentName: raw.agentName, agentEmail: raw.agentEmail },
+    tags: [],
+    startedAt: raw.startedAt,
+    completedAt: raw.completedAt,
+    totalLatencyMs: raw.totalLatencyMs,
+    totalTokens: raw.totalTokens,
+    promptTokens: raw.promptTokens,
+    completionTokens: raw.completionTokens,
+    cost: undefined,
+  });
+}
+
+function ingestLegacyTraceSpan(raw: TraceSpan): void {
+  if (raw.type === 'llm_call' && raw.llm) {
+    insertRun({
+      id: raw.id,
+      traceId: raw.runId,
+      parentRunId: undefined,
+      name: `llm:${raw.llm.model}`,
+      runType: 'llm',
+      status: 'completed',
+      inputs: undefined,
+      outputs: undefined,
+      error: undefined,
+      metadata: { iteration: String(raw.llm.iteration) },
+      tags: [],
+      startedAt: raw.startedAt,
+      completedAt: raw.completedAt,
+      latencyMs: raw.latencyMs,
+      promptTokens: raw.llm.usage.promptTokens,
+      completionTokens: raw.llm.usage.completionTokens,
+      totalTokens: raw.llm.usage.totalTokens,
+      model: raw.llm.model,
+      provider: raw.llm.provider,
+      temperature: raw.llm.temperature,
+      promptMessages: raw.llm.messages,
+      completion: raw.llm.completion,
+      finishReason: raw.llm.finishReason,
+      toolCalls: raw.llm.toolCalls,
+    });
+  } else if (raw.type === 'tool_call' && raw.tool) {
+    insertRun({
+      id: raw.id,
+      traceId: raw.runId,
+      parentRunId: undefined,
+      name: `tool:${raw.tool.name}`,
+      runType: 'tool',
+      status: raw.tool.isError ? 'error' : 'completed',
+      inputs: { arguments: raw.tool.arguments },
+      outputs: { result: raw.tool.result },
+      error: raw.tool.isError ? raw.tool.result : undefined,
+      metadata: { toolCallId: raw.tool.toolCallId },
+      tags: [],
+      startedAt: raw.startedAt,
+      completedAt: raw.completedAt,
+      latencyMs: raw.latencyMs,
+      promptTokens: undefined,
+      completionTokens: undefined,
+      totalTokens: undefined,
+      model: undefined,
+      provider: undefined,
+      temperature: undefined,
+      promptMessages: undefined,
+      completion: undefined,
+      finishReason: undefined,
+      toolCalls: [],
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Trace consumer — ingests events from NATS JetStream into SQLite
+// ---------------------------------------------------------------------------
+
 export async function initTraceConsumer(): Promise<void> {
   if (!js) return;
   try {
-    // Check if the trace stream exists
     await jsm!.streams.info(TRACE_STREAM_NAME);
   } catch {
     console.log('[nats-client] Trace stream not yet available. Trace consumer will not start.');
@@ -55,24 +167,41 @@ export async function initTraceConsumer(): Promise<void> {
           const raw = JSON.parse(decoder.decode(msg.data));
           const subject = msg.subject;
 
-          if (subject.startsWith('trace.run.')) {
-            upsertRun(raw as TraceRun);
+          if (subject.startsWith('trace.trace.')) {
+            // New Trace format (from updated runtime)
+            const trace = raw as Trace;
+            ensureProject(subject.slice('trace.trace.'.length));
+            upsertTrace(trace);
+          } else if (subject.startsWith('trace.run.')) {
+            // Disambiguate: new Run has `runType`, legacy TraceRun has `emailId`
+            if ('runType' in raw) {
+              // New Run format (from updated runtime)
+              insertRun(raw as Run);
+            } else {
+              // Legacy TraceRun format (from old runtime)
+              ingestLegacyTraceRun(raw as TraceRun);
+            }
           } else if (subject.startsWith('trace.span.')) {
-            addSpan(raw as TraceSpan);
+            // Legacy TraceSpan format (from old runtime)
+            ingestLegacyTraceSpan(raw as TraceSpan);
           }
         } catch (err) {
-          console.error('[nats-client] Failed to decode trace event:', err);
+          console.error('[nats-client] Failed to process trace event:', err);
         }
       }
     })().catch(() => {
       // consumer ended
     });
 
-    console.log('[nats-client] Trace consumer started');
+    console.log('[nats-client] Trace consumer started (SQLite backend)');
   } catch (err) {
     console.warn('[nats-client] Failed to start trace consumer:', err);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Email message queries (unchanged)
+// ---------------------------------------------------------------------------
 
 export interface MessageListResult {
   messages: Email[];
@@ -89,7 +218,6 @@ export async function getAgentMessages(
   const limit = options.limit ?? 50;
   const subjects = subjectsForAgent(agentEmail, groups);
 
-  // Use an ordered consumer with subject filtering
   const consumer = await js.consumers.get(STREAM_NAME, {
     filterSubjects: subjects,
   });
@@ -110,7 +238,6 @@ export async function getAgentMessages(
   const hasMore = messages.length > limit;
   if (hasMore) messages.pop();
 
-  // Sort newest first
   messages.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   return { messages, hasMore };
@@ -137,7 +264,6 @@ export async function getThreadMessages(threadId: string): Promise<Email[]> {
     }
   }
 
-  // Sort chronologically for thread view
   messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
   return messages;

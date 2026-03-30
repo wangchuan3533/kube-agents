@@ -1093,52 +1093,93 @@ Limits (maximum):
 
 ## 10. Monitoring & Observability
 
-### 10.1 Metrics
+### 10.1 Tracing (LangSmith-inspired)
+
+The system provides comprehensive execution tracing with a hierarchical data model:
 
 ```
-Agent Metrics:
-├── Messages processed (counter)
-├── Processing latency (histogram)
-├── Tool execution latency (per tool)
-├── LLM token usage (counter)
-├── Error rates (counter)
-├── Pod resource usage (gauge)
-└── NATS subscriber lag (gauge)
-
-Operator Metrics:
-├── CRD reconciliations (counter)
-├── Pod creations/deletions (counter)
-├── ConfigMap updates (counter)
-└── Operator latency (histogram)
+Data Model (LangSmith-aligned):
+├── Project — Groups traces by agent (auto-created per agent)
+│   └── Trace — One end-to-end operation (email processing cycle)
+│       ├── Run (LLM) — Individual LLM call with full I/O
+│       ├── Run (Tool) — Tool execution with arguments/results
+│       └── Run (Chain) — Composite step (supports nesting via parentRunId)
+├── Feedback — Scores attached to runs/traces (human, code, or LLM-as-judge)
+├── Dataset — Collection of test examples for evaluation
+│   └── Example — Individual test case (inputs + expected outputs)
+└── Experiment — Results of evaluating an agent against a dataset
+    └── ExperimentResult — Per-example output with scores
 ```
 
-### 10.2 Logging
+#### Trace Flow
 
 ```
-Agent Logs:
-├── Level: info (production), debug (dev)
-├── Format: JSON structured logging
-├── Fields: timestamp, agent_name, event, duration, status
-├── Examples:
-│   {
-│     "timestamp": "2026-03-11T10:30:00Z",
-│     "level": "info",
-│     "agent": "code_agent",
-│     "event": "message_received",
-│     "from": "engineer@company.com",
-│     "duration_ms": 25000,
-│     "status": "success"
-│   }
-└── Exported to cluster logging system
-
-Operator Logs:
-├── CRD changes
-├── Pod lifecycle events
-├── Reconciliation errors
-└── Configuration changes
+Runtime (Tracer)                    NATS JetStream               Dashboard
+─────────────────                  ────────────────             ─────────────
+startTrace() ──────────────────▶  trace.trace.{agent} ──────▶ SQLite (traces)
+  startRun(llm) ──────────────▶  trace.run.{agent}   ──────▶ SQLite (runs)
+  startRun(tool) ─────────────▶  trace.run.{agent}   ──────▶ SQLite (runs)
+  complete() ─────────────────▶  trace.trace.{agent} ──────▶ SQLite (update)
 ```
 
-### 10.3 Health Checks
+#### Storage
+
+- **SQLite** with WAL mode for concurrent reads (replaces in-memory store)
+- Persistent via PVC in Kubernetes (`/data/kube-agents.db`)
+- Supports Projects, Traces, Runs, Feedback, Datasets, Examples, Experiments
+
+### 10.2 Evaluation
+
+```
+Evaluation System:
+├── Datasets — Create from traces or manually curate test cases
+├── Evaluators — Code (exact_match, regex, JSON schema) + LLM-as-judge
+├── Experiments — Run agent against dataset, score with evaluators
+└── Comparison — Side-by-side experiment results with score deltas
+```
+
+### 10.3 Dashboard
+
+```
+Navigation (sidebar):
+├── Observability
+│   ├── Overview — System health, active agents, key metrics
+│   ├── Projects — Per-agent trace grouping with aggregate stats
+│   │   └── Project Detail — Filtered traces, token/error metrics
+│   ├── Traces — Searchable trace list with status filtering
+│   │   └── Trace Detail — Hierarchical run tree with expand/collapse
+│   │       ├── LLM runs: prompt, completion, tokens, latency
+│   │       ├── Tool runs: arguments, results, errors
+│   │       └── Feedback scores
+│   └── Monitoring — Time-series charts, model usage, error rates
+│       ├── Trace Volume — CSS bar chart (24h hourly buckets)
+│       ├── Model Usage — Calls, tokens, latency per model/provider
+│       ├── Error Rates — Per-project error rate breakdown
+│       └── Project Activity — Aggregate stats table
+└── Evaluation
+    ├── Datasets — CRUD for evaluation datasets and examples
+    │   └── Dataset Detail — Examples list, linked experiments, run experiments
+    └── Experiments — Evaluation results with per-example scores
+        └── Experiment Detail — Summary metrics, evaluator score aggregates, results table
+
+Agent Detail (linked from Overview):
+├── Overview — Identity, replicas, token usage, LLM config
+├── Messages — Email inbox/outbox from NATS
+├── Traces — Agent-specific trace list
+└── Configuration — Full spec (tools, skills, permissions)
+```
+
+### 10.4 Monitoring API
+
+```
+Monitoring Endpoints:
+├── GET /api/monitoring/summary — Aggregated overview (stats + timeseries + models + errors)
+├── GET /api/monitoring/timeseries — Time-series trace metrics (configurable granularity/buckets)
+├── GET /api/monitoring/models — Model usage breakdown
+└── GET /api/monitoring/errors — Error rates per project
+```
+
+### 10.5 Health Checks
 
 ```
 Readiness Probe:

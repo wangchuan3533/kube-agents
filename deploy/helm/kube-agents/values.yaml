@@ -52,6 +52,12 @@ dashboard:
     nodePort: 30080
   nats:
     url: ""  # auto-detected from NATS service if empty
+  database:
+    path: "/data/kube-agents.db"
+  persistence:
+    enabled: true
+    size: "1Gi"
+    storageClass: ""  # use default storage class
   resources:
     requests:
       cpu: "50m"

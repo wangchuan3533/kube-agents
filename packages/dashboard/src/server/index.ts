@@ -2,7 +2,17 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { api } from './routes.js';
+import { getDb } from './db.js';
 import { initNats, initTraceConsumer } from './nats-client.js';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+
+// Ensure data directory exists for SQLite
+const dbPath = process.env['DATABASE_PATH'] ?? './data/kube-agents.db';
+mkdirSync(dirname(dbPath), { recursive: true });
+
+// Initialize SQLite database
+getDb();
 
 // Initialize NATS connection (non-blocking — dashboard works without it)
 await initNats().catch(() => {
